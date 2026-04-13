@@ -27,8 +27,9 @@ from starlette.middleware.cors import CORSMiddleware
 load_dotenv()
 
 ROOT_DIR = Path(__file__).parent
-DATA_FILE = ROOT_DIR / "data_store.json"
-UPLOADS_DIR = ROOT_DIR / "uploads"
+DATA_ROOT = Path(os.environ.get("YARD_DATA_DIR", str(ROOT_DIR))).expanduser()
+DATA_FILE = Path(os.environ.get("YARD_DATA_FILE", str(DATA_ROOT / "data_store.json"))).expanduser()
+UPLOADS_DIR = Path(os.environ.get("YARD_UPLOADS_DIR", str(DATA_ROOT / "uploads"))).expanduser()
 UPLOADS_SVG_DIR = UPLOADS_DIR / "svg"
 UPLOADS_VISUAL_DIR = UPLOADS_DIR / "visual"
 LOCAL_COLLECTIONS = (
@@ -204,6 +205,7 @@ async def check_storage_health() -> Dict[str, Any]:
 
 def write_local_store(store: Dict[str, List[Dict[str, Any]]]) -> None:
     serializable = {collection: clone_document(store.get(collection, [])) for collection in LOCAL_COLLECTIONS}
+    DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp_file = DATA_FILE.with_suffix(".tmp")
     with open(tmp_file, "w", encoding="utf-8") as handle:
         json.dump(serializable, handle, indent=2, ensure_ascii=True)

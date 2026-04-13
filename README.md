@@ -63,6 +63,20 @@ PORT=3001 npm start
 
 The copied frontend env file points the app at `http://localhost:8001`, so the browser and API stay aligned during local work.
 
+### Container hosts
+
+For container deployments, the image listens on `PORT`, then `WEBSITES_PORT`, then falls back to `8000`.
+
+Optional backend env vars can move JSON-backed demo data and uploads onto a persistent writable path:
+
+```bash
+YARD_DATA_DIR=/some/persistent/path
+YARD_DATA_FILE=/some/persistent/path/data_store.json
+YARD_UPLOADS_DIR=/some/persistent/path/uploads
+```
+
+This is useful for temporary demo deployments on container hosts where `/app` is not durable across restarts.
+
 ## Tests
 
 ```bash
