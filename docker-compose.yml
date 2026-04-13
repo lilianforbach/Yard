@@ -1,0 +1,47 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-random-secret}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8000}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@yard.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-YardAccess2026!}
+    restart: unless-stopped
+
+  app-with-mongo:
+    profiles: ["mongo"]
+    extends:
+      service: app
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-random-secret}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8000}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: yard
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@yard.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-YardAccess2026!}
+
+  mongo:
+    profiles: ["mongo"]
+    image: mongo:7
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mongo_data:

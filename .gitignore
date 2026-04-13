@@ -1,0 +1,48 @@
+# Editors and system files
+.DS_Store
+.idea/
+.vscode/
+
+# Local tooling
+.claude/
+.agents/
+
+# Dependencies and builds
+node_modules/
+frontend/node_modules/
+frontend/build/
+dist/
+coverage/
+
+# Environment files
+.env
+.env.*
+!.env.example
+backend/.env
+
+# Python caches and virtual environments
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+backend/venv/
+
+# Local app data
+backend/data_store.json
+backend/data_store.tmp
+backend/uploads/
+backups/
+
+# Accidental root-level package files
+/package.json
+/package-lock.json
+/yarn.lock
+
+# Local reference artefacts
+User Interface/
+tools/
+slides_embed_test.html
+prototype.html
+CompGastro_Intranet_Prototype.html
+test_result.md
