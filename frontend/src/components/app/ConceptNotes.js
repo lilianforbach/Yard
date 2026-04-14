@@ -233,8 +233,18 @@ export default function ConceptNotes() {
     e.preventDefault();
     setFormError('');
 
+    if (!linkedPerson?.id) {
+      setFormError('Concept notes can only be created by signed-in programme members with a profile.');
+      return;
+    }
+
     if (!form.title.trim() || form.contributors.length === 0 || !form.rationale.trim()) {
       setFormError('Please provide a title, at least one contributor, and a rationale.');
+      return;
+    }
+
+    if (!form.contributors.includes(linkedPerson.id)) {
+      setFormError('Include yourself as a contributor when creating a concept note.');
       return;
     }
 
@@ -246,7 +256,8 @@ export default function ConceptNotes() {
       showToast('Concept note created successfully');
     } catch (err) {
       console.error('Failed to create concept note:', err);
-      setFormError('Failed to create concept note. Please try again.');
+      const detail = err.response?.data?.detail;
+      setFormError(typeof detail === 'string' ? detail : 'Failed to create concept note. Please try again.');
       showToast('Failed to create concept note', 'error');
     } finally {
       setSubmitting(false);
@@ -667,9 +678,11 @@ export default function ConceptNotes() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button data-testid="new-concept-note-btn" className="action-btn" onClick={openForm}>
-          <Plus size={16} /> Add Concept Note
-        </button>
+        {linkedPerson?.id && (
+          <button data-testid="new-concept-note-btn" className="action-btn" onClick={openForm}>
+            <Plus size={16} /> Add Concept Note
+          </button>
+        )}
       </div>
 
       <div className="conceptnotes-shell">

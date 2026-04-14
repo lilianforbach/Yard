@@ -33,7 +33,9 @@ Yard is built to keep work visible across a programme without becoming a heavy p
 
 Project leads use Yard to keep the direction and current state of a project visible over time. They decide what is worth recording, how often to update, which milestones matter, and which challenges to signal. A project lead is the person carrying the project forward day to day. It is a working role, not a marker of seniority.
 
-In that context, _Save quietly_ and _Publish_ are meaningful choices. _Save quietly_ keeps something on the project page as part of the ongoing record. _Publish_ gives it wider visibility when shared awareness, timely review, or broader expertise would help move the work forward.
+In that context, _Save quietly_ and _Publish_ are meaningful choices. _Save quietly_ keeps something on the project page as part of the ongoing record. _Publish_ gives it wider visibility in Yard, including on the Dashboard, when shared awareness, timely review, or broader expertise would help move the work forward.
+
+Feedback works differently. It stays close to the project page and the work it relates to, rather than entering that wider layer of visibility.
 
 For PIs and others in review roles, Yard offers a way to stay aware of the programme beyond the projects they know best, and to see where their judgement, experience, or connections may be useful -- whether that contribution happens in Yard, in meetings, or through direct conversations.
 

@@ -21,6 +21,7 @@ import {
 import { SectionNotice, SectionSkeleton } from './SectionState';
 import { canAccessMaintenance, formatDaysAgo, getMaintenanceSnapshot } from '../../lib/maintenance';
 import { getLinkedPerson } from '../../lib/roleAccess';
+import { canAccessProjectReview } from '../../lib/projectReview';
 import PasswordResetModal from './PasswordResetModal';
 
 function parseDateValue(value) {
@@ -230,6 +231,7 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
   const dashboardResourceKeys = ['activity', 'milestones', 'conceptNotes', 'events', 'publications', 'projects', 'people'];
   const linkedPerson = getLinkedPerson(permissions, getPerson);
   const maintenanceAccess = canAccessMaintenance(permissions, linkedPerson);
+  const reviewAccess = canAccessProjectReview(permissions, linkedPerson);
   const currentView = maintenanceAccess && searchParams.get('view') === 'maintenance' ? 'maintenance' : 'overview';
   const adminMaintenanceAccess = Boolean(permissions?.isAdmin);
 
@@ -428,13 +430,13 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
           meta: contributorLabel,
           metaSecondary: frontstageState === 'progressed'
             ? progressSummary?.label || 'Progressed'
-            : note.activeUntil
+            : reviewAccess && note.activeUntil
               ? `Active until ${formatDate(note.activeUntil)}`
               : '',
           onClick: () => onNavigate('conceptnotes', { note: note.id }),
         };
       }),
-    [conceptNotes, getPerson, getProject, onNavigate]
+    [conceptNotes, getPerson, getProject, onNavigate, reviewAccess]
   );
 
   const recentPublications = useMemo(

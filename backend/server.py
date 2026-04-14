@@ -1628,6 +1628,52 @@ def get_concept_note_actor_id(user: Dict[str, Any]) -> str:
     )
 
 
+def get_concept_note_actor_ids(
+    user: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    values = [
+        linked_person.get("id") if linked_person else None,
+        user.get("personId"),
+        user.get("person_id"),
+        user.get("id"),
+        user.get("email"),
+    ]
+    actor_ids: List[str] = []
+    for value in values:
+        cleaned = (value or "").strip()
+        if cleaned and cleaned not in actor_ids:
+            actor_ids.append(cleaned)
+    return actor_ids
+
+
+def can_create_concept_note(linked_person: Optional[Dict[str, Any]]) -> bool:
+    return linked_person is not None
+
+
+def can_edit_concept_note_content(
+    user: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]],
+    note: Dict[str, Any],
+) -> bool:
+    if is_admin(user):
+        return True
+    if linked_person is None:
+        return False
+
+    actor_ids = set(get_concept_note_actor_ids(user, linked_person))
+    contributors = {
+        (contributor_id or "").strip()
+        for contributor_id in (note.get("contributors") or [])
+        if (contributor_id or "").strip()
+    }
+    created_by = (note.get("createdBy") or "").strip()
+
+    if created_by and created_by in actor_ids:
+        return True
+    return bool(actor_ids & contributors)
+
+
 def build_concept_note_activity_author(note: Dict[str, Any], people_by_id: Dict[str, str]) -> str:
     contributors = note.get("contributors") or []
     names = [people_by_id.get(contributor, contributor) for contributor in contributors]
@@ -2466,8 +2512,8 @@ async def get_institutions() -> List[Dict[str, Any]]:
 
 @api_router.get("/skill-taxonomy")
 async def get_skill_taxonomy() -> Dict[str, Any]:
-    seed_path = ROOT_DIR / "seed_data.json"
-    if seed_path.is_file():
+    seed_path = get_seed_file()
+    if seed_path and seed_path.is_file():
         import json as _json
         with open(seed_path) as f:
             seed = _json.load(f)
@@ -3237,7 +3283,13 @@ async def create_concept_note(
     data: ConceptNoteCreate,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
+    linked = await get_linked_person(user)
+    if not can_create_concept_note(linked):
+        raise HTTPException(status_code=403, detail="Only signed-in programme members with a profile can create concept notes")
+
     doc = data.model_dump()
+    if linked["id"] not in doc.get("contributors", []):
+        raise HTTPException(status_code=422, detail="Concept note contributors must include the signed-in user")
     for contributor_id in doc.get("contributors", []):
         person = await get_by_field("people", "id", contributor_id)
         if not person:
@@ -3249,7 +3301,7 @@ async def create_concept_note(
 
     created_at = utc_now().strftime("%Y-%m-%d")
     doc["id"] = f"cn{uuid4().hex}"
-    doc["createdBy"] = get_concept_note_actor_id(user)
+    doc["createdBy"] = linked["id"]
     doc["createdAt"] = created_at
     doc["updatedAt"] = created_at
     doc["activeUntil"] = compute_concept_note_active_until(created_at)
@@ -3269,6 +3321,7 @@ async def update_concept_note(
     if not existing:
         raise HTTPException(status_code=404, detail="Concept note not found")
 
+    linked = await get_linked_person(user)
     update_payload = data.model_dump(exclude_none=True)
     if not update_payload:
         raise HTTPException(status_code=400, detail="No valid fields to update")
@@ -3277,11 +3330,25 @@ async def update_concept_note(
     if any(field_name in update_payload for field_name in admin_only_fields) and not is_admin(user):
         raise HTTPException(status_code=403, detail="Only admins can update concept note stewardship")
 
+    ordinary_content_fields = {
+        "title",
+        "contributors",
+        "rationale",
+        "relevance",
+        "preliminaryInsights",
+        "nextSteps",
+        "relatedProjects",
+    }
+    if any(field_name in update_payload for field_name in ordinary_content_fields) and not can_edit_concept_note_content(user, linked, existing):
+        raise HTTPException(status_code=403, detail="Only concept note contributors or admins can edit concept note content")
+
     if "contributors" in update_payload:
         for contributor_id in update_payload["contributors"]:
             person = await get_by_field("people", "id", contributor_id)
             if not person:
                 raise HTTPException(status_code=404, detail=f"Contributor not found: {contributor_id}")
+        if not is_admin(user) and linked and linked["id"] not in update_payload["contributors"]:
+            raise HTTPException(status_code=422, detail="Concept note contributors must include the signed-in user")
 
     if "relatedProjects" in update_payload:
         missing_projects = await ensure_projects_exist(update_payload["relatedProjects"])
