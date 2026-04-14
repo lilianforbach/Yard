@@ -1021,7 +1021,8 @@ def can_edit_project(user: Dict[str, Any], project: Dict[str, Any], linked_perso
 
 
 def can_create_project(user: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> bool:
-    return is_admin(user) or is_programme_manager(linked_person)
+    del linked_person
+    return is_admin(user)
 
 
 def is_project_member(project: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> bool:
@@ -1058,10 +1059,13 @@ def normalize_feedback_include_reviewers(
 
 
 def can_view_feedback_entry(
+    user: Dict[str, Any],
     project: Dict[str, Any],
     linked_person: Optional[Dict[str, Any]],
     feedback_entry: Dict[str, Any],
 ) -> bool:
+    if is_admin(user):
+        return True
     if linked_person is None:
         return False
 
@@ -1074,7 +1078,7 @@ def can_view_feedback_entry(
         feedback_entry.get("audience"),
         feedback_entry.get("includeReviewers"),
     )
-    if include_reviewers and (linked_person.get("role") == "pi" or is_programme_manager(linked_person)):
+    if include_reviewers and can_access_review_surface(user, linked_person):
         return True
     if audience == "lead":
         return linked_person.get("id") == get_primary_project_lead_id(project)
@@ -1083,12 +1087,13 @@ def can_view_feedback_entry(
 
 def redact_project_feedback_for_viewer(
     project: Dict[str, Any],
+    user: Dict[str, Any],
     linked_person: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     visible_feedback = [
         dict(entry)
         for entry in (project.get("feedback") or [])
-        if can_view_feedback_entry(project, linked_person, entry)
+        if can_view_feedback_entry(user, project, linked_person, entry)
     ]
     project_copy = dict(project)
     project_copy["feedback"] = visible_feedback
@@ -1100,13 +1105,11 @@ def can_add_project_feedback(
     project: Dict[str, Any],
     linked_person: Optional[Dict[str, Any]],
 ) -> bool:
-    """Any PI can add feedback to a project team, except the primary lead of that project; the programme manager can also add feedback."""
-    if is_programme_manager(linked_person):
-        return True
+    """Users with review access can add feedback unless they are the primary project lead."""
+    if not can_access_review_surface(user, linked_person):
+        return False
     if linked_person is None:
-        return False
-    if linked_person.get("role") != "pi":
-        return False
+        return True
     return linked_person.get("id") != get_primary_project_lead_id(project)
 
 
@@ -1116,11 +1119,13 @@ def can_edit_feedback_entry(
     linked_person: Optional[Dict[str, Any]],
     feedback_entry: Dict[str, Any],
 ) -> bool:
-    if is_programme_manager(linked_person):
+    if is_admin(user):
         return True
-    if not can_add_project_feedback(user, project, linked_person):
+    if linked_person is None:
         return False
-    return feedback_entry.get("author") == linked_person.get("name")
+    if feedback_entry.get("author") != linked_person.get("name"):
+        return False
+    return can_add_project_feedback(user, project, linked_person)
 
 
 def can_access_review_surface(user: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> bool:
@@ -2563,7 +2568,8 @@ async def update_person(
 async def get_projects(user: Optional[Dict[str, Any]] = Depends(get_optional_user)) -> List[Dict[str, Any]]:
     projects = await list_collection("projects", limit=200)
     linked_person = await get_linked_person(user) if user else None
-    return [redact_project_feedback_for_viewer(project, linked_person) for project in projects]
+    viewer = user or {}
+    return [redact_project_feedback_for_viewer(project, viewer, linked_person) for project in projects]
 
 
 @api_router.get("/projects/{project_id}")
@@ -2575,7 +2581,8 @@ async def get_project(
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
     linked_person = await get_linked_person(user) if user else None
-    return redact_project_feedback_for_viewer(item, linked_person)
+    viewer = user or {}
+    return redact_project_feedback_for_viewer(item, viewer, linked_person)
 
 
 @api_router.post("/projects")
@@ -2585,7 +2592,7 @@ async def create_project(
 ) -> Dict[str, Any]:
     linked = await get_linked_person(user)
     if not can_create_project(user, linked):
-        raise HTTPException(status_code=403, detail="Only the programme manager can create projects")
+        raise HTTPException(status_code=403, detail="Only admins can create projects")
 
     team_fields = build_project_team_fields(data.leadId, data.teamMemberIds)
     if not team_fields["leadId"]:
@@ -2858,7 +2865,7 @@ async def add_project_feedback(
         raise HTTPException(status_code=404, detail="Project not found")
     linked = await get_linked_person(user)
     if not can_add_project_feedback(user, project, linked):
-        raise HTTPException(status_code=403, detail="Only a PI or the programme manager can add feedback")
+        raise HTTPException(status_code=403, detail="Only users with review access who are not the project lead can add feedback")
     entry_date = data.date or utc_now().strftime("%Y-%m-%d")
     feedback_doc = {
         "title": data.title,
@@ -2994,7 +3001,7 @@ async def edit_project_feedback(
     if entry_index < 0 or entry_index >= len(feedback):
         raise HTTPException(status_code=404, detail="Feedback entry not found")
     if not can_edit_feedback_entry(user, project, linked, feedback[entry_index]):
-        raise HTTPException(status_code=403, detail="Only the feedback author or the programme manager can edit")
+        raise HTTPException(status_code=403, detail="Only the feedback author or an admin can edit")
     if data.title is not None:
         feedback[entry_index]["title"] = data.title
     if data.content is not None:

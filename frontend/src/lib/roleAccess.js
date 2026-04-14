@@ -33,7 +33,7 @@ export function getFeedbackAudienceState(entryOrAudience, maybeIncludeReviewers 
 export function getFeedbackAudienceBadges(entryOrAudience, maybeIncludeReviewers = null) {
   const { baseAudience, includeReviewers } = getFeedbackAudienceState(entryOrAudience, maybeIncludeReviewers);
   const badges = [FEEDBACK_AUDIENCE_LABELS[baseAudience] || FEEDBACK_AUDIENCE_LABELS.team];
-  if (includeReviewers) badges.push('PIs and Reviewers');
+  if (includeReviewers) badges.push('Review access');
   return badges;
 }
 
@@ -47,11 +47,7 @@ export function canOnboardMembers(permissions) {
 }
 
 export function canCreateProjects(permissions, linkedPerson) {
-  if (permissions?.isAdmin) return true;
-  if (!linkedPerson) return false;
-
-  const title = (linkedPerson.title || '').toLowerCase();
-  return ['staff', 'coordinator', 'management'].includes(linkedPerson.role) && title.includes('programme manager');
+  return Boolean(permissions?.isAdmin);
 }
 
 export function canCreateGlobalMilestones(permissions, linkedPerson, projects = []) {
@@ -76,15 +72,11 @@ export function getProjectSurfaceAccess({ permissions, linkedPerson, project }) 
   const isLead = Boolean(linkedId && leadId && linkedId === leadId);
   const isProjectPi = Boolean(linkedId && linkedPerson?.role === 'pi' && projectMemberIds.includes(linkedId));
   const isContributor = Boolean(linkedId && projectMemberIds.includes(linkedId) && !isLead && !isProjectPi);
-  const isProgrammeManager = Boolean(
-    linkedPerson
-    && ['staff', 'coordinator', 'management'].includes(linkedPerson.role)
-    && (linkedPerson.title || '').toLowerCase().includes('programme manager')
-  );
+  const hasReviewAccess = canAccessProjectReview(permissions, linkedPerson);
 
   const canManageProjectContent = isAdmin || isLead;
-  const canViewPrivateFeedback = isProjectMember || isProgrammeManager;
-  const canAddFeedback = isProgrammeManager || (Boolean(linkedPerson?.role === 'pi') && !isLead);
+  const canViewPrivateFeedback = isAdmin || isProjectMember;
+  const canAddFeedback = Boolean(hasReviewAccess && !isLead);
 
   return {
     linkedPerson,
@@ -93,7 +85,6 @@ export function getProjectSurfaceAccess({ permissions, linkedPerson, project }) 
     isLead,
     isProjectPi,
     isContributor,
-    isProgrammeManager,
     canManageProjectContent,
     canManageTeam: canManageProjectContent,
     canManageMilestones: canManageProjectContent,
@@ -101,14 +92,15 @@ export function getProjectSurfaceAccess({ permissions, linkedPerson, project }) 
     canAddUpdate: canManageProjectContent,
     canAddFeedback,
     canViewPrivateFeedback,
-    canAccessReview: canAccessProjectReview(permissions, linkedPerson),
+    canAccessReview: hasReviewAccess,
     canAccessMaintenance: canAccessMaintenance(permissions, linkedPerson),
     canViewFeedbackEntry(entry) {
       if (!entry) return false;
+      if (isAdmin) return true;
       if (feedbackAuthorName && entry.author === feedbackAuthorName) return true;
 
       const { baseAudience, includeReviewers } = getFeedbackAudienceState(entry);
-      if (includeReviewers && (linkedPerson?.role === 'pi' || isProgrammeManager)) return true;
+      if (includeReviewers && hasReviewAccess) return true;
       if (baseAudience === 'lead') return isLead;
       return isProjectMember;
     },
@@ -116,7 +108,7 @@ export function getProjectSurfaceAccess({ permissions, linkedPerson, project }) 
       if (!entry?.entryType) return false;
       if (entry.entryType === 'updates') return isAdmin || isLead;
       if (entry.entryType === 'feedback') {
-        if (isProgrammeManager) return true;
+        if (isAdmin) return true;
         return Boolean(canAddFeedback && feedbackAuthorName && entry.author === feedbackAuthorName);
       }
       return false;

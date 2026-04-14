@@ -17,6 +17,7 @@ import {
 } from '../../lib/conceptNotes';
 import { canAccessMaintenance, getConceptNoteTrustCue } from '../../lib/maintenance';
 import { getLinkedPerson } from '../../lib/roleAccess';
+import { canAccessProjectReview } from '../../lib/projectReview';
 import { matchesSearchQuery } from '../../lib/search';
 import SlidePanel from './SlidePanel';
 import { SectionNotice, SectionSkeleton } from './SectionState';
@@ -93,6 +94,7 @@ export default function ConceptNotes() {
 
   const linkedPerson = getLinkedPerson(permissions, getPerson);
   const maintenanceAccess = canAccessMaintenance(permissions, linkedPerson);
+  const reviewAccess = canAccessProjectReview(permissions, linkedPerson);
   const requestedNoteId = searchParams.get('note');
 
   const [filter, setFilter] = useState('active');
@@ -395,7 +397,7 @@ export default function ConceptNotes() {
       <div className="panel-meta">
         {selectedContributorLabel && <span className="inst-badge">{selectedContributorLabel}</span>}
         {selectedFreshnessDate && <span className="inst-badge">Updated {formatDate(selectedFreshnessDate)}</span>}
-        {!isConceptNoteProgressed(selectedNote) && selectedNote.activeUntil && (
+        {reviewAccess && !isConceptNoteProgressed(selectedNote) && selectedNote.activeUntil && (
           <span className="inst-badge">Active until {formatDate(selectedNote.activeUntil)}</span>
         )}
       </div>
@@ -438,7 +440,7 @@ export default function ConceptNotes() {
 
           {maintenanceAccess && selectedTrustCue && (
             <div className={`admin-record-cue ${selectedTrustCue.tone}`}>
-              <div className="admin-record-cue-label">Coordinator cue</div>
+              <div className="admin-record-cue-label">Admin cue</div>
               <div className="admin-record-cue-headline">{selectedTrustCue.headline}</div>
               <div className="admin-record-cue-note">{selectedTrustCue.note}</div>
             </div>
@@ -506,7 +508,7 @@ export default function ConceptNotes() {
                     type="text"
                     value={progressDraft.note}
                     onChange={(e) => setProgressDraft((current) => ({ ...current, note: e.target.value }))}
-                    placeholder="Short note for programme managers"
+                    placeholder="Short stewardship note"
                     disabled={stewardshipAction !== ''}
                   />
                 </label>
@@ -704,7 +706,7 @@ export default function ConceptNotes() {
                         {frontstageState === 'progressed' && latestProgressSummary && (
                           <span className="cn-list-signal">{latestProgressSummary.label}</span>
                         )}
-                        {frontstageState === 'active' && note.activeUntil && (
+                        {reviewAccess && frontstageState === 'active' && note.activeUntil && (
                           <span className="cn-list-signal">Active until {formatDate(note.activeUntil)}</span>
                         )}
                       </div>
