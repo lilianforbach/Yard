@@ -92,6 +92,18 @@ def parse_bool_env(name: str, default: bool = False) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def get_seed_file() -> Optional[Path]:
+    configured_seed = (os.environ.get("YARD_SEED_FILE") or "").strip()
+    if configured_seed:
+        return Path(configured_seed).expanduser()
+
+    private_seed = ROOT_DIR / "seed_data.private.json"
+    if private_seed.exists():
+        return private_seed
+
+    return None
+
+
 def get_explicit_frontend_origins() -> List[str]:
     return [origin.rstrip("/") for origin in ALLOWED_ORIGINS if origin and origin != "*"]
 
@@ -3501,9 +3513,14 @@ async def seed_database() -> None:
         )
         logger.info("Admin password updated")
 
-    seed_file = ROOT_DIR / "seed_data.json"
+    seed_file = get_seed_file()
+    if seed_file is None:
+        logger.info("No seed file configured; skipping data seed")
+        await ensure_indexes()
+        return
+
     if not seed_file.exists():
-        logger.warning("seed_data.json not found, skipping data seed")
+        logger.warning("Configured seed file %s not found, skipping data seed", seed_file)
         await ensure_indexes()
         return
 

@@ -31,6 +31,7 @@ backend/venv/
 # Local app data
 backend/data_store.json
 backend/data_store.tmp
+backend/*.private.json
 backend/uploads/
 backups/
 
