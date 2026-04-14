@@ -1,12 +1,94 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { PROGRAMME_RHYTHM } from '../../lib/programmeRhythm';
+import LatexContent from './LatexContent';
 
 const PROGRAMME_TABS = [
-  { id: 'overview', label: 'Overview' },
+  { id: 'guide', label: 'Guide' },
+  { id: 'overview', label: 'Workflows' },
   { id: 'rhythm', label: 'Rhythm' },
   { id: 'rri', label: 'Responsible Research' },
 ];
+
+const YARD_GUIDE_MARKDOWN = `
+# Yard Guide
+
+_3 min read_
+
+## What Yard is
+
+Yard is a shared workspace for keeping research work in context between meetings. It helps members of a programme see what is moving, what may need support, and where their expertise might be useful.
+
+It is designed for research-programme communities that need light-touch visibility across people, projects, and meetings. A good working average is around _10 minutes per month_ of active use -- time spent checking context, recording a few useful signals, and responding where relevant. That is time in Yard itself, not the research work it supports.
+
+## About this demo
+
+This is a seeded demo of Yard. It uses fictional personas and sample records to show the kinds of work, questions, and signals Yard can carry. The workflows are real.
+
+The aim is not to learn every feature or read every page closely. It is to get a clear feel for what Yard is for, how it works, and where it might fit in a research programme.
+
+## How Yard is meant to work
+
+Yard is built to keep work visible across a programme without becoming a heavy process.
+
+Project leads use Yard to keep the direction and current state of a project visible over time. They decide what is worth recording, how often to update, which milestones matter, and which challenges to signal. A project lead is the person carrying the project forward day to day. It is a working role, not a marker of seniority.
+
+In that context, _Save quietly_ and _Publish_ are meaningful choices. _Save quietly_ keeps something on the project page as part of the ongoing record. _Publish_ gives it wider visibility when shared awareness, timely review, or broader expertise would help move the work forward.
+
+For PIs and others in review roles, Yard offers a way to stay aware of the programme beyond the projects they know best, and to see where their judgement, experience, or connections may be useful -- whether that contribution happens in Yard, in meetings, or through direct conversations.
+
+The programme generates many early ideas. Concept notes give them a visible place so they can create connections, inform discussion, link into project work, and be taken forward.
+
+## A suggested way to explore
+
+Different people will naturally look for different things.
+
+### If you are a PI
+
+A good starting path is:
+
+- Open _Dashboard_ to get a quick sense of what is visible across the programme.
+- Open _Review_ to see where projects may benefit from attention, follow-up, or wider support.
+- Open a few projects outside your own immediate area and look at how updates, milestones, challenges, and feedback sit together on the page.
+- Visit _People_ and _Events_ to see how expertise and programme activity are surfaced across the app.
+
+As you explore, notice whether Yard helps you form a clear picture quickly, and whether it shows you where your perspective may be useful.
+
+### If you are a researcher or project lead
+
+A good starting path is:
+
+- Open a project page and read one or two recent updates.
+- Look at the project's milestones and current challenges.
+- Compare what stays local to the project page with what becomes more visible across the wider programme.
+- Visit _People_ to see how expertise is made discoverable, and open a _Concept Note_ to see how earlier-stage ideas can stay visible and useful.
+
+As you explore, notice whether the project page feels like a helpful working surface, and whether it makes the shape and current state of the work easier to understand.
+
+## What to look for
+
+As you move through the demo, a few questions may be worth keeping in mind:
+
+- Does a small amount of upkeep create a clearer picture of the programme than meetings and scattered updates alone?
+- Do project pages make it easier to understand both the science and the current state of a project?
+- Do milestones, challenges, and feedback feel like useful signals in context?
+- Do concept notes help early ideas stay visible at the right stage?
+- Does Yard help the programme make better use of the expertise it already has?
+- Does the amount of platform use feel proportionate to the value of the shared picture it creates?
+
+## What is available in this demo
+
+This demo includes Yard's main shared surfaces: _Dashboard_, _People_, _Projects_, _Review_, _Concept Notes_, _Events_, _Publications_, and _Getting Started_.
+
+What you can change depends on the persona you are using:
+
+- PI accounts are mainly for exploring the wider programme, using _Review_, and contributing feedback where useful.
+- Researcher and project-lead accounts are for exploring the wider programme and, where relevant, maintaining the records of the projects they lead.
+
+## After your tour
+
+Useful feedback can be simple. You might note what felt intuitive, what felt unclear, what you would trust, what you would ignore, and what would make Yard more useful in the real life of a programme.
+`;
 
 const RHYTHM_GROUPS = [
   { id: 'monthly', label: 'Monthly', cadence: 'Monthly' },
@@ -15,9 +97,9 @@ const RHYTHM_GROUPS = [
   { id: 'annual', label: 'Annual', cadence: 'Annual' },
 ];
 
-export default function Resources({ initialTab = 'overview' }) {
+export default function Resources({ initialTab = 'guide' }) {
   const [activeTab, setActiveTab] = useState(() => (
-    PROGRAMME_TABS.some((tab) => tab.id === initialTab) ? initialTab : 'overview'
+    PROGRAMME_TABS.some((tab) => tab.id === initialTab) ? initialTab : 'guide'
   ));
 
   return (
@@ -38,6 +120,7 @@ export default function Resources({ initialTab = 'overview' }) {
       {activeTab === 'overview' && <Overview />}
       {activeTab === 'rhythm' && <RhythmGuide />}
       {activeTab === 'rri' && <RRI />}
+      {activeTab === 'guide' && <YardGuide />}
     </section>
   );
 }
@@ -45,55 +128,7 @@ export default function Resources({ initialTab = 'overview' }) {
 function Overview() {
   return (
     <div className="static-content">
-      <OnboardingGuideCard />
       <WorkflowCatalogue />
-    </div>
-  );
-}
-
-function OnboardingGuideCard() {
-  return (
-    <div className="static-card resource-onboarding-card">
-      <h3>Onboarding and Profiles</h3>
-      <p>Yard is designed so people can get set up once, then make light-touch profile updates only when something material changes.</p>
-
-      <div className="resource-onboarding-grid">
-        <div className="resource-onboarding-column">
-          <h4>For admins</h4>
-          <div className="resource-onboarding-steps">
-            <div className="resource-onboarding-step">
-              <strong>1. Create the member in People.</strong>
-              <p>Use <Link to="/people">People</Link> → <span>Onboard Member</span> to create the profile and the Yard login together.</p>
-            </div>
-            <div className="resource-onboarding-step">
-              <strong>2. Share the invite link directly.</strong>
-              <p>Yard shows the invite link once. The researcher uses it to choose their own password before the first sign-in.</p>
-            </div>
-            <div className="resource-onboarding-step">
-              <strong>3. Reset access later from Maintenance if needed.</strong>
-              <p>Use Dashboard → Maintenance → Account access when someone needs a fresh temporary password.</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="resource-onboarding-column">
-          <h4>For researchers</h4>
-          <div className="resource-onboarding-steps">
-            <div className="resource-onboarding-step">
-              <strong>1. Open the invite and choose your password.</strong>
-              <p>That activates your Yard login. After that, you sign in normally with your email and password.</p>
-            </div>
-            <div className="resource-onboarding-step">
-              <strong>2. Open your profile from People and choose Edit Profile.</strong>
-              <p>That is the main place for title, contact details, research interests, visibility, and optional links like ORCID, website, GitHub, or Substack.</p>
-            </div>
-            <div className="resource-onboarding-step">
-              <strong>3. Add shared expertise or equipment support only if it helps others find you.</strong>
-              <p>Keep it light. A few things you would be happy to be contacted about are enough.</p>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
@@ -216,29 +251,95 @@ function KeyContactCard({ title = 'Key Contact', contacts }) {
 function RRI() {
   return (
     <div className="static-content">
-      <div className="resource-rri-intro">
+      <div className="static-card resource-rri-hero">
         <h3>Responsible Research</h3>
         <p>
-          Responsible research is part of everyday programme work. This page summarises the shared principles and
-          expectations that shape project decisions, data handling, stakeholder involvement, and translation.
+          Responsible research and innovation is part of how this programme works. It helps us think carefully about
+          how research is done, how it may be used, who it may affect, and how wider questions can help shape the work well.
         </p>
       </div>
 
-      <div className="resource-rri-section">
-        <h4>What this means in practice</h4>
+      <div className="static-card resource-rri-card">
+        <h4>The EPSRC Framework</h4>
+        <p className="resource-rri-lead">
+          The programme follows the EPSRC framework for responsible innovation, using the <strong>AREA</strong> approach:
+          {' '}Anticipate, Reflect, Engage, and Act.
+        </p>
+
+        <div className="resource-area-grid">
+          <div className="resource-area-card">
+            <div className="resource-area-letter">A</div>
+            <div className="resource-area-body">
+              <strong>Anticipate</strong>
+              <p>Consider possible implications, opportunities, and wider effects.</p>
+            </div>
+          </div>
+          <div className="resource-area-card">
+            <div className="resource-area-letter">R</div>
+            <div className="resource-area-body">
+              <strong>Reflect</strong>
+              <p>Examine assumptions, motivations, uncertainties, and framing.</p>
+            </div>
+          </div>
+          <div className="resource-area-card">
+            <div className="resource-area-letter">E</div>
+            <div className="resource-area-body">
+              <strong>Engage</strong>
+              <p>Involve relevant people, perspectives, and stakeholders.</p>
+            </div>
+          </div>
+          <div className="resource-area-card">
+            <div className="resource-area-letter">A</div>
+            <div className="resource-area-body">
+              <strong>Act</strong>
+              <p>Let what emerges inform decisions, direction, and practice.</p>
+            </div>
+          </div>
+        </div>
+
+        <p className="resource-rri-reference">
+          See the{' '}
+          <a
+            href="https://www.ukri.org/who-we-are/epsrc/our-policies-and-standards/framework-for-responsible-innovation/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            EPSRC framework for responsible innovation
+          </a>.
+        </p>
+      </div>
+
+      <div className="static-card resource-rri-card">
+        <h4>What this means in the programme</h4>
         <div className="resource-guidance-points">
           <div className="resource-guidance-point">
-            <strong>Project records should stay honest and current.</strong>
-            <p>Updates, milestones, and current challenges are there to support thoughtful attention, not to present only good news.</p>
+            <strong>Think early about wider implications.</strong>
+            <p>That may include societal, environmental, ethical, and cultural questions connected to the research.</p>
           </div>
           <div className="resource-guidance-point">
-            <strong>Early concerns and opportunities should surface early enough to be useful.</strong>
-            <p>Concept notes, project feedback, and programme discussions should help promising ideas, risks, and ethical questions become visible while they can still shape the work well.</p>
+            <strong>Consider how work may be understood and used.</strong>
+            <p>Methods, findings, tools, and examples can travel beyond the immediate project, so it is worth thinking about how they may be interpreted and applied.</p>
           </div>
           <div className="resource-guidance-point">
-            <strong>Support is available when research raises wider questions.</strong>
-            <p>The RETO and Programme Manager can help when work touches coordination, external engagement, translation, IP, or other programme-level considerations.</p>
+            <strong>Bring in the right perspectives when useful.</strong>
+            <p>Questions around public engagement, framing, partnerships, translation, IP, or external use often benefit from wider expertise and discussion.</p>
           </div>
+          <div className="resource-guidance-point">
+            <strong>Let new insight shape the work.</strong>
+            <p>Plans, claims, collaborations, and routes to application can all be refined as the work develops.</p>
+          </div>
+        </div>
+        <div className="resource-rri-reflection">
+          <p>
+            Different projects will call for different kinds of RRI attention. Some questions are best worked through
+            within a project. Others benefit from broader engagement across the programme or beyond it. The aim is
+            thoughtful, proportionate, and constructive practice.
+          </p>
+          <p>
+            RRI is part of the shared work of the programme. It helps ensure that the research is not only excellent in
+            itself, but also well considered in how it develops, how it connects with others, and how it creates value
+            more widely.
+          </p>
         </div>
       </div>
 
@@ -247,13 +348,22 @@ function RRI() {
         contacts={[
           {
             label: 'RETO',
-            personId: 'amara_reto',
-            name: 'Dr. Amara Osei',
-            description: 'can help with responsible research translation, public engagement, exploitation questions, IP thinking, and the kinds of external or ethical conversations that may help an idea move forward well.',
+            personId: 'callum',
+            name: 'Dr. Callum Buchanan',
+            description: 'can help with responsible innovation, translation, public engagement, partnerships, IP, and wider framing questions across the programme.',
           },
         ]}
       />
+    </div>
+  );
+}
 
+function YardGuide() {
+  return (
+    <div className="static-content">
+      <div className="resource-guide-page">
+        <LatexContent text={YARD_GUIDE_MARKDOWN} rawMarkdown className="resource-guide-markdown" />
+      </div>
     </div>
   );
 }
@@ -296,14 +406,6 @@ const WORKFLOW_SECTIONS = [
         wherePrefixGhost: true,
         whereAria: 'Projects → Project page → Add Challenge',
       },
-    ],
-  },
-  {
-    title: 'For Admins and Coordinators',
-    rows: [
-      { workflow: 'Onboard a new member and prepare their invite link', where: 'People → Onboard Member' },
-      { workflow: 'Create or refresh an invite for an existing profile', where: 'People → Profile → Invite to Yard' },
-      { workflow: 'Reset a password for an existing account', where: 'Dashboard → Maintenance → Account access' },
     ],
   },
   {

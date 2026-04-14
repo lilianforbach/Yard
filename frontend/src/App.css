@@ -6334,43 +6334,6 @@ a.publication-list-row {
   padding: 0;
   margin-bottom: 1rem;
 }
-.resource-onboarding-card {
-  background: var(--color-card-soft);
-}
-.resource-onboarding-grid {
-  margin-top: 1rem;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 1rem;
-}
-.resource-onboarding-column {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-.resource-onboarding-steps {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-.resource-onboarding-step {
-  padding: 0.85rem 0.95rem;
-  border-radius: calc(var(--radius) - 2px);
-  border: 1px solid var(--color-border);
-  background: var(--color-card);
-}
-.resource-onboarding-step strong {
-  display: block;
-  font-size: 0.78rem;
-  font-weight: 700;
-  line-height: 1.45;
-  color: var(--color-text);
-  margin-bottom: 0.18rem;
-}
-.resource-onboarding-step p {
-  margin: 0;
-  font-size: 0.78rem;
-}
 
 .resource-workflow-sections {
   --resource-workflow-name-column: 24rem;
@@ -6533,8 +6496,119 @@ a.publication-list-row {
   margin-top: 0;
 }
 
+.resource-guide-page {
+  padding: 0.2rem 0 0;
+}
+
+.resource-guide-markdown {
+  max-width: 49rem;
+}
+
+.latex-content.resource-guide-markdown {
+  color: var(--color-text);
+  font-size: 0.86rem;
+  line-height: 1.72;
+}
+
+.resource-guide-markdown h1 {
+  margin: 0 0 0.2rem;
+  font-size: 1.22rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.resource-guide-markdown h2 {
+  margin: 1.45rem 0 0.45rem;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.resource-guide-markdown h3 {
+  margin: 1.1rem 0 0.35rem;
+  font-size: 0.92rem;
+  font-weight: 700;
+}
+
+.resource-guide-markdown p,
+.resource-guide-markdown ul,
+.resource-guide-markdown ol {
+  color: var(--color-text);
+}
+
+.resource-guide-markdown p {
+  margin: 0 0 0.82rem;
+}
+
+.resource-guide-markdown p + p {
+  margin-top: 0;
+}
+
+.resource-guide-markdown h1 + p {
+  margin-bottom: 1rem;
+  color: var(--color-text-light);
+}
+
+.resource-guide-markdown ul,
+.resource-guide-markdown ol {
+  padding-left: 1.45rem;
+  margin: 0.35rem 0 0.95rem;
+}
+
+.resource-guide-markdown ul {
+  list-style: disc;
+}
+
+.resource-guide-markdown ol {
+  list-style: decimal;
+}
+
+.resource-guide-markdown li {
+  display: list-item;
+  line-height: 1.6;
+  padding-left: 0.12rem;
+}
+
+.resource-guide-markdown li + li {
+  margin-top: 0.34rem;
+}
+
+.resource-guide-markdown li::marker {
+  color: var(--color-text-light);
+}
+
+.resource-guide-markdown em {
+  font-style: italic;
+}
+
+.resource-guide-markdown code {
+  font-size: inherit;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
 .resource-contact-card {
-  background: #FBFCFD;
+  border-color: rgba(93, 108, 121, 0.14);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(251, 252, 253, 0.98));
+  box-shadow: 0 10px 26px rgba(16, 24, 40, 0.03);
+}
+
+.resource-contact-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(46, 90, 136, 0.18), rgba(46, 90, 136, 0.04) 60%, transparent);
+}
+
+.resource-contact-card h4,
+.resource-contact-list {
+  position: relative;
+}
+
+.resource-contact-card h4 {
+  margin-bottom: 0.9rem;
 }
 
 .resource-contact-list {
@@ -6559,6 +6633,7 @@ a.publication-list-row {
 
 .resource-contact-item p {
   margin-bottom: 0;
+  max-width: 46rem;
 }
 
 .resource-contact-link {
@@ -6575,6 +6650,159 @@ a.publication-list-row {
 .resource-contact-link:focus-visible {
   outline: 2px solid rgba(46, 90, 136, 0.28);
   outline-offset: 2px;
+}
+
+.resource-rri-hero,
+.resource-rri-card,
+.resource-contact-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.resource-rri-hero {
+  padding: 1.65rem;
+  border-color: rgba(93, 108, 121, 0.16);
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 12px 30px rgba(16, 24, 40, 0.035);
+}
+
+.resource-rri-hero h3 {
+  position: relative;
+  margin: 0 0 0.55rem;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.resource-rri-hero p {
+  position: relative;
+  max-width: 44rem;
+  margin-bottom: 0;
+  font-size: 0.82rem;
+  color: var(--color-text);
+}
+
+.resource-rri-card {
+  border-color: rgba(93, 108, 121, 0.14);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(251, 252, 253, 0.98));
+}
+
+.resource-rri-card h4 {
+  margin-bottom: 0.5rem;
+}
+
+.resource-rri-lead {
+  max-width: 42rem;
+  margin-bottom: 1rem;
+  color: var(--color-text);
+}
+
+.resource-rri-lead strong {
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.resource-area-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+  margin: 1rem 0 1.1rem;
+}
+
+.resource-area-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.95rem 1rem;
+  border-radius: calc(var(--radius) - 4px);
+  border: 1px solid rgba(93, 108, 121, 0.12);
+  background: linear-gradient(180deg, rgba(250, 252, 254, 0.98), rgba(246, 248, 250, 0.96));
+}
+
+.resource-area-letter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(46, 90, 136, 0.16);
+  background: rgba(46, 90, 136, 0.08);
+  color: var(--color-aldhelm);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.resource-area-body {
+  min-width: 0;
+}
+
+.resource-area-body strong {
+  display: block;
+  margin-bottom: 0.18rem;
+  font-size: 0.82rem;
+  color: var(--color-text);
+}
+
+.resource-area-body p {
+  margin: 0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+}
+
+.resource-rri-reference {
+  margin-top: 0;
+  padding-top: 0.9rem;
+  border-top: 1px solid rgba(93, 108, 121, 0.12);
+}
+
+.resource-rri-reference a {
+  color: var(--color-aldhelm);
+  font-weight: 600;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(46, 90, 136, 0.18);
+}
+
+.resource-rri-reference a:hover {
+  border-bottom-color: rgba(46, 90, 136, 0.48);
+}
+
+.resource-rri-reference a:focus-visible {
+  outline: 2px solid rgba(46, 90, 136, 0.28);
+  outline-offset: 2px;
+}
+
+.resource-rri-card .resource-guidance-points {
+  gap: 0.75rem;
+  margin: 1rem 0 1rem;
+}
+
+.resource-rri-card .resource-guidance-point {
+  padding: 0.9rem 1rem;
+  border-radius: calc(var(--radius) - 4px);
+  border: 1px solid rgba(93, 108, 121, 0.11);
+  background: linear-gradient(180deg, rgba(252, 253, 254, 0.98), rgba(248, 250, 252, 0.95));
+}
+
+.resource-rri-card .resource-guidance-point strong {
+  display: block;
+  margin-bottom: 0.18rem;
+}
+
+.resource-rri-reflection {
+  margin-top: 0.2rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid rgba(93, 108, 121, 0.12);
+}
+
+.resource-rri-reflection p {
+  margin-bottom: 0;
+}
+
+.resource-rri-reflection p + p {
+  margin-top: 0.7rem;
 }
 
 .resource-checklist {
@@ -6633,6 +6861,18 @@ a.publication-list-row {
 .contact-list li { font-size: 0.8rem; color: var(--color-text-light); line-height: 1.6; margin-bottom: 0.375rem; }
 
 .empty-state { font-size: 0.8rem; color: var(--color-text-light); text-align: center; padding: 2rem; }
+
+@media (max-width: 720px) {
+  .resource-rri-hero,
+  .resource-rri-card,
+  .resource-contact-card {
+    padding: 1.2rem;
+  }
+
+  .resource-area-grid {
+    grid-template-columns: 1fr;
+  }
+}
 
 .section-skeleton {
   display: grid;
@@ -7296,9 +7536,6 @@ a.publication-list-row {
 }
 
 @media (max-width: 900px) {
-  .resource-onboarding-grid {
-    grid-template-columns: 1fr;
-  }
   .resource-workflow-sections {
     --resource-workflow-name-column: 18rem;
   }
