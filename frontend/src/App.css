@@ -2406,7 +2406,7 @@ textarea.editable-field-input { min-height: 4rem; }
   line-height: 1.5;
   color: var(--color-text-light);
 }
-.review-saved-view-btn {
+.timeline-range-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -2419,33 +2419,14 @@ textarea.editable-field-input { min-height: 4rem; }
   font-weight: 500;
   cursor: pointer;
 }
-.review-saved-view-btn:hover {
+.timeline-range-btn:hover {
   border-color: color-mix(in srgb, var(--color-interactive) 38%, transparent);
   color: var(--color-text);
 }
-.review-saved-view-btn.active {
+.timeline-range-btn.active {
   background: var(--color-pill-bg);
   border-color: color-mix(in srgb, var(--color-interactive) 28%, transparent);
   color: var(--color-interactive);
-}
-.review-saved-view-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.35rem;
-  height: 1.35rem;
-  padding: 0 0.35rem;
-  border-radius: 999px;
-  background: var(--color-card-soft);
-  border: 1px solid var(--color-border);
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: var(--color-text-light);
-}
-.review-saved-view-btn.active .review-saved-view-count {
-  color: var(--color-interactive);
-  border-color: color-mix(in srgb, var(--color-interactive) 22%, transparent);
-  background: color-mix(in srgb, var(--color-pill-bg) 78%, var(--color-card-soft));
 }
 .projects-review-list {
   background: var(--color-card);

@@ -29,8 +29,6 @@ The aim is not to learn every feature or read every page closely. It is to get a
 
 ## How Yard is meant to work
 
-Yard helps people stay aware of the programme beyond the projects they know best, and see where their judgement, experience, or connections may be useful -- whether that contribution happens in Yard, in meetings, or through direct conversations.
-
 Project leads use Yard to keep the direction and current state of a project visible over time. They decide what is worth recording, how often to **update**, which **milestones** matter, and which **challenges** to signal. A project lead is the person carrying the project forward day to day.
 
 In that context, _Save quietly_ and _Publish_ are meaningful choices. _Save quietly_ keeps something on the project page as part of the ongoing record. _Publish_ gives it wider visibility in Yard, including on the Dashboard, when shared awareness, timely review, or broader expertise would help move the work forward.

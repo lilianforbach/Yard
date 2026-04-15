@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, ChevronRight, X, Plus } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
@@ -310,12 +310,6 @@ export default function Projects({
       ? 'teams'
       : 'overview';
   const selectedProjectId = searchParams.get('project');
-
-  useEffect(() => {
-    if (reviewView === 'timeline-lab') {
-      setReviewView('timeline');
-    }
-  }, [reviewView]);
 
   const setView = (nextView) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -883,7 +877,7 @@ export default function Projects({
                     <button
                       key={option.value}
                       type="button"
-                      className={`review-saved-view-btn ${timelineRange === option.value ? 'active' : ''}`}
+                      className={`timeline-range-btn ${timelineRange === option.value ? 'active' : ''}`}
                       onClick={() => setTimelineRange(option.value)}
                     >
                       <span>{option.label}</span>
