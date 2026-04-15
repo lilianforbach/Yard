@@ -1,5 +1,6 @@
 import json
 from datetime import timedelta
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -10,6 +11,7 @@ from backend import server
 
 ADMIN_EMAIL = "admin@yard.local"
 ADMIN_PASSWORD = "YardAccess2026!"
+TEST_SEED_FILE = Path(__file__).parent / "fixtures" / "seed_data.test.json"
 
 
 def get_activation_token(invite_link: str) -> str:
@@ -31,6 +33,7 @@ def isolated_app(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "FRONTEND_BUILD", build_dir)
     monkeypatch.setattr(server, "FRONTEND_INDEX", build_dir / "index.html")
     monkeypatch.setattr(server, "FRONTEND_STATIC", build_dir / "static")
+    monkeypatch.setenv("YARD_SEED_FILE", str(TEST_SEED_FILE))
 
     return server.app, data_file
 
@@ -405,8 +408,16 @@ def test_concept_notes_reject_unknown_related_projects(client):
         f"/api/conceptnotes/{created.json()['id']}",
         json={"relatedProjects": ["still-not-real"]},
     )
-    assert invalid_update.status_code == 404
-    assert invalid_update.json()["detail"] == "Project not found: still-not-real"
+    assert invalid_update.status_code == 403
+    assert invalid_update.json()["detail"] == "Only admins can update concept note stewardship"
+
+    login(client)
+    admin_invalid_update = client.put(
+        f"/api/conceptnotes/{created.json()['id']}",
+        json={"relatedProjects": ["still-not-real"]},
+    )
+    assert admin_invalid_update.status_code == 404
+    assert admin_invalid_update.json()["detail"] == "Project not found: still-not-real"
 
 
 def test_existing_profile_access_creation_survives_profile_email_edit(isolated_app):
@@ -650,7 +661,7 @@ def test_project_write_permissions_follow_role_rules(client):
     assert programme_manager_feedback.json()["author"] == "Nkechi Adeyemi"
 
 
-def test_feedback_edit_is_limited_to_author_or_programme_manager(client):
+def test_feedback_edit_is_limited_to_author_or_admin(client):
     register_and_login(client, "k.yamamoto@lakemere.ac.uk", "Prof. Kenji Yamamoto")
     created = client.post(
         "/api/projects/sousbot/feedback",
@@ -670,8 +681,15 @@ def test_feedback_edit_is_limited_to_author_or_programme_manager(client):
         "/api/projects/sousbot/feedback/0",
         json={"content": "The programme manager can edit feedback entries"},
     )
-    assert programme_manager_edit.status_code == 200
-    assert programme_manager_edit.json()["feedback"][0]["content"] == "The programme manager can edit feedback entries"
+    assert programme_manager_edit.status_code == 403
+
+    login(client)
+    admin_edit = client.put(
+        "/api/projects/sousbot/feedback/0",
+        json={"content": "Admins can edit feedback entries"},
+    )
+    assert admin_edit.status_code == 200
+    assert admin_edit.json()["feedback"][0]["content"] == "Admins can edit feedback entries"
 
 
 def test_feedback_visibility_respects_audience_scopes(client):
@@ -795,19 +813,26 @@ def test_milestone_permissions_follow_project_lead(client):
     assert lead_update.json()["computedStatus"] == "completed"
 
 
-def test_concept_note_updates_remain_open_to_authenticated_users(client):
+def test_concept_note_updates_require_contributor_or_admin(client):
     register_and_login(client, "a.bakari@lakemere.ac.uk", "Aisha Bakari")
     notes_response = client.get("/api/conceptnotes")
     assert notes_response.status_code == 200
     note_id = notes_response.json()[0]["id"]
 
-    update_response = client.put(
+    blocked_update = client.put(
         f"/api/conceptnotes/{note_id}",
         json={"nextSteps": "Updated during an authenticated integration test."},
     )
+    assert blocked_update.status_code == 403
 
-    assert update_response.status_code == 200
-    assert update_response.json()["nextSteps"] == "Updated during an authenticated integration test."
+    register_and_login(client, "p.ramanathan@lakemere.ac.uk", "Dr. Priya Ramanathan")
+    allowed_update = client.put(
+        f"/api/conceptnotes/{note_id}",
+        json={"nextSteps": "Updated during a contributor integration test."},
+    )
+
+    assert allowed_update.status_code == 200
+    assert allowed_update.json()["nextSteps"] == "Updated during a contributor integration test."
 
 
 def test_concept_note_stewardship_fields_require_admin(client):
@@ -838,6 +863,10 @@ def test_concept_note_stewardship_fields_require_admin(client):
 
 
 def test_concept_note_active_window_extensions_are_admin_only(client):
+    notes_response = client.get("/api/conceptnotes")
+    assert notes_response.status_code == 401
+
+    login(client)
     notes_response = client.get("/api/conceptnotes")
     assert notes_response.status_code == 200
     note = notes_response.json()[0]
@@ -881,19 +910,22 @@ def test_new_record_ids_are_collision_safe_hex_strings(client):
             "type": "research",
         },
     )
+    register_and_login(client, "k.yamamoto@lakemere.ac.uk", "Prof. Kenji Yamamoto")
     concept_note_a = client.post(
         "/api/conceptnotes",
         json={
             "title": "Collision-safe note A",
-            "contributors": ["priya"],
+            "contributors": ["kenji"],
             "rationale": "A promising early direction worth keeping in view.",
         },
     )
+
+    register_and_login(client, "a.osei@thornbridge.ac.uk", "Prof. Amara Osei")
     concept_note_b = client.post(
         "/api/conceptnotes",
         json={
             "title": "Collision-safe note B",
-            "contributors": ["tomas"],
+            "contributors": ["amara"],
             "rationale": "Another promising early direction worth keeping in view.",
         },
     )
@@ -906,7 +938,7 @@ def test_new_record_ids_are_collision_safe_hex_strings(client):
     assert concept_note_a.json()["id"] != concept_note_b.json()["id"]
     assert milestone_a.json()["id"].startswith("m")
     assert concept_note_a.json()["id"].startswith("cn")
-    assert concept_note_a.json()["contributors"] == ["priya"]
+    assert concept_note_a.json()["contributors"] == ["kenji"]
     assert concept_note_a.json()["activeUntil"] == server.compute_concept_note_active_until(concept_note_a.json()["createdAt"])
 
 
