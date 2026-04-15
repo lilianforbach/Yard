@@ -92,7 +92,7 @@ export function getProjectSurfaceAccess({ permissions, linkedPerson, project }) 
     canAddFeedback,
     canViewPrivateFeedback,
     canAccessReview: hasReviewAccess,
-    canAccessMaintenance: canAccessMaintenance(permissions, linkedPerson),
+    canAccessMaintenance: canAccessMaintenance(permissions),
     canViewFeedbackEntry(entry) {
       if (!entry) return false;
       if (isAdmin) return true;

@@ -34,7 +34,7 @@ export function formatDaysAgo(days) {
   return `${days} days ago`;
 }
 
-export function canAccessMaintenance(permissions, linkedPerson) {
+export function canAccessMaintenance(permissions) {
   return Boolean(permissions?.isAdmin);
 }
 

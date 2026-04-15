@@ -1160,7 +1160,6 @@ textarea {
 .dash-maintenance-intro {
   padding: 0;
 }
-.dash-maintenance-intro .dash-section-title { margin-bottom: 0.35rem; }
 .dash-maintenance-intro p {
   font-size: 0.8rem;
   line-height: 1.5;
@@ -1213,6 +1212,11 @@ textarea {
   flex-direction: column;
   gap: 0;
 }
+.maintenance-item-list.scrollable {
+  max-height: 20rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
 .maintenance-item {
   width: 100%;
   text-align: left;
@@ -1257,17 +1261,12 @@ textarea {
 .maintenance-inline-action {
   flex-shrink: 0;
 }
-.maintenance-account-list {
-  max-height: 18rem;
-  overflow-y: auto;
-  padding-right: 0.25rem;
+.maintenance-operations-section {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.25rem;
 }
-.account-access-item:disabled {
-  cursor: default;
-  opacity: 0.72;
-}
-.account-access-item:disabled:hover {
-  background: transparent;
+.maintenance-card-operations {
+  gap: 0.8rem;
 }
 
 /* ─── EDITABLE FIELDS (B20) ─────────────────────────────── */

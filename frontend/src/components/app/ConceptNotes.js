@@ -103,7 +103,7 @@ export default function ConceptNotes() {
   const { showToast } = useToast();
 
   const linkedPerson = getLinkedPerson(permissions, getPerson);
-  const maintenanceAccess = canAccessMaintenance(permissions, linkedPerson);
+  const maintenanceAccess = canAccessMaintenance(permissions);
   const reviewAccess = canAccessProjectReview(permissions, linkedPerson);
   const requestedNoteId = searchParams.get('note');
 
