@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, ChevronRight, X, Plus } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
@@ -39,7 +39,7 @@ const DEFAULT_REVIEW_STATE = {
 const DEFAULT_FRESHNESS_CUE = {
   bucket: 'quiet',
   rank: 99,
-  headline: '',
+  label: '',
   detail: '',
 };
 
@@ -265,13 +265,10 @@ function groupByMonth(items) {
 }
 
 const ACTIVITY_TYPE_LABELS = {
-  feedback: 'Feedback',
+  update: 'Update',
   challenge: 'Challenge',
   'challenge-resolved': 'Resolved',
   'concept-note': 'Concept note',
-  'profile-update': 'Profile',
-  record: 'Project details',
-  milestone: 'Milestone',
 };
 
 export default function Projects({
@@ -289,7 +286,6 @@ export default function Projects({
   const [catalogueSearch, setCatalogueSearch] = useState('');
   const [reviewView, setReviewView] = useState('health');
   const [reviewSearch, setReviewSearch] = useState('');
-  const [reviewSavedView, setReviewSavedView] = useState('all');
   const [timelineSearch, setTimelineSearch] = useState('');
   const [timelineRange, setTimelineRange] = useState('6m');
   const [activitySearch, setActivitySearch] = useState('');
@@ -314,12 +310,6 @@ export default function Projects({
       ? 'teams'
       : 'overview';
   const selectedProjectId = searchParams.get('project');
-
-  useEffect(() => {
-    if (reviewView === 'timeline-lab') {
-      setReviewView('timeline');
-    }
-  }, [reviewView]);
 
   const setView = (nextView) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -448,19 +438,6 @@ export default function Projects({
       })
   ), [filteredProjects, projectIndex]);
 
-  const reviewSavedViews = useMemo(() => {
-    const viewDefs = [
-      { value: 'all', label: 'All' },
-      { value: 'needs-attention', label: 'Worth a look' },
-      { value: 'no-milestone', label: 'No milestone' },
-    ];
-
-    return viewDefs.map((view) => ({
-      ...view,
-      count: projectIndex.filter((row) => matchesReviewSavedView(row, view.value)).length,
-    }));
-  }, [projectIndex]);
-
   const projectIndexById = useMemo(
     () => new Map(projectIndex.map((row) => [row.project.id, row])),
     [projectIndex]
@@ -471,9 +448,6 @@ export default function Projects({
     const rows = projectIndex.filter((row) => {
       const { lead, reviewSnapshot, nextMilestone } = row;
       const reviewState = getSafeReviewState(reviewSnapshot);
-      if (!matchesReviewSavedView(row, reviewSavedView)) {
-        return false;
-      }
 
       if (!matchesSearchQuery(
         query,
@@ -482,7 +456,7 @@ export default function Projects({
         lead?.name,
         reviewState.detail,
         row.freshnessCue?.detail,
-        row.freshnessCue?.headline,
+        row.freshnessCue?.label,
         nextMilestone?.title,
         row.lastActivitySummary,
         row.lastActivityLabel
@@ -494,7 +468,7 @@ export default function Projects({
     });
 
     return rows.sort(compareProjectsByHealthOrder);
-  }, [projectIndex, reviewSavedView, reviewSearch]);
+  }, [projectIndex, reviewSearch]);
 
   const roadmapRows = useMemo(() => (
     milestones.map((milestone) => {
@@ -515,13 +489,11 @@ export default function Projects({
     return roadmapRows
       .filter((row) => matchesSearchQuery(
         query,
-          row.milestone.title,
-          row.project?.title,
-          row.lead?.name,
-          row.milestone.type,
-          getStatusLabel(row.milestone.computedStatus),
-          row.timingLabel,
-          row.reviewNote
+        row.milestone.title,
+        row.project?.title,
+        row.lead?.name,
+        row.milestone.type,
+        getStatusLabel(row.milestone.computedStatus)
       ));
   }, [roadmapRows, timelineSearch]);
 
@@ -530,7 +502,7 @@ export default function Projects({
   const timelineRows = useMemo(() => {
     const query = timelineSearch;
     const groupedByProject = new Map();
-    const allowedProjectRows = projectIndex.filter((row) => matchesReviewSavedView(row, reviewSavedView));
+    const allowedProjectRows = projectIndex;
     const allowedProjectIds = new Set(allowedProjectRows.map((row) => row.project.id));
 
     allowedProjectRows.forEach((row) => {
@@ -541,7 +513,7 @@ export default function Projects({
         row.lead?.name,
         getSafeReviewState(row.reviewSnapshot).detail,
         row.freshnessCue?.detail,
-        row.freshnessCue?.headline,
+        row.freshnessCue?.label,
         row.nextMilestone?.title,
         row.lastActivitySummary,
         row.lastActivityLabel
@@ -572,8 +544,6 @@ export default function Projects({
       groupedByProject.get(row.project.id).milestones.push(row.milestone);
     });
 
-    const statusPriority = { overdue: 0, approaching: 1, 'on-track': 2, completed: 3 };
-
     return [...groupedByProject.values()]
       .map((group) => {
         const visibleMilestones = group.milestones
@@ -583,32 +553,9 @@ export default function Projects({
           })
           .sort((a, b) => compareDateStringsAsc(a.dueDate, b.dueDate));
 
-        const dates = visibleMilestones
-          .map((milestone) => parseMilestoneDate(milestone.dueDate))
-          .filter(Boolean);
-        const minDate = dates.length ? new Date(Math.min(...dates)) : null;
-        const maxDate = dates.length ? new Date(Math.max(...dates)) : null;
-        const worstStatus = visibleMilestones.reduce((worst, milestone) => {
-          const current = milestone.computedStatus || 'on-track';
-          return (statusPriority[current] ?? 2) < (statusPriority[worst] ?? 2) ? current : worst;
-        }, 'on-track');
-        const labelledMilestoneIds = new Set(
-          visibleMilestones
-            .filter((milestone) => milestone.computedStatus === 'overdue' || milestone.computedStatus === 'approaching')
-            .map((milestone) => milestone.id)
-        );
-        const nextUpcoming = visibleMilestones.find((milestone) => milestone.computedStatus !== 'completed');
-        if (nextUpcoming) {
-          labelledMilestoneIds.add(nextUpcoming.id);
-        }
-
         return {
           ...group,
           milestones: visibleMilestones,
-          minDate,
-          maxDate,
-          worstStatus,
-          labelledMilestoneIds,
           isEmptyRow: visibleMilestones.length === 0,
           emptyMessage: group.totalMilestoneCount === 0 ? 'No milestones yet' : 'No milestones in this range',
         };
@@ -621,7 +568,7 @@ export default function Projects({
         }
         return compareProjectsByHealthOrder(aProjectRow, bProjectRow);
       });
-  }, [filteredTimelineRows, projectIndex, projectIndexById, reviewSavedView, timelineSearch, timelineWindow]);
+  }, [filteredTimelineRows, projectIndex, projectIndexById, timelineSearch, timelineWindow]);
 
   const timelineMarkers = useMemo(() => {
     const start = new Date(timelineWindow.start);
@@ -670,11 +617,10 @@ export default function Projects({
       .filter((item) => item.type !== 'feedback')
       .filter((item) => matchesSearchQuery(
         query,
-          item.title,
-          item.project,
-          item.author,
-          ACTIVITY_TYPE_LABELS[item.type] || getProjectActivityLabel(item.type),
-          item.content
+        item.title,
+        item.project,
+        item.author,
+        ACTIVITY_TYPE_LABELS[item.type] || getProjectActivityLabel(item.type)
       ))
       .sort((a, b) => compareDateStringsDesc(a.date || '', b.date || ''));
   }, [activity, activitySearch]);
@@ -862,30 +808,20 @@ export default function Projects({
                 </div>
               </div>
 
-              <div className="projects-review-saved-views" aria-label="Saved review views">
-                {reviewSavedViews.map((view) => (
-                  <button
-                    key={view.value}
-                    type="button"
-                    className={`review-saved-view-btn ${reviewSavedView === view.value ? 'active' : ''}`}
-                    onClick={() => setReviewSavedView(view.value)}
-                  >
-                    <span>{view.label}</span>
-                    <span className="review-saved-view-count">{view.count}</span>
-                  </button>
-                ))}
-              </div>
+              <p className="projects-review-helper-copy">
+                Projects are ordered by current challenges, milestones, and recent published activity, so those most likely to benefit from review appear first.
+              </p>
 
               <div className="projects-review-list">
                 {reviewRows.length === 0 ? (
                   <div className="projects-review-empty">
-                    <h4>No projects match these review filters.</h4>
-                    <p>Try broadening the search or switching to a different review slice.</p>
+                    <h4>No projects match this search.</h4>
+                    <p>Try broadening the search.</p>
                   </div>
                 ) : (
                   <>
                     <div className="project-review-header" aria-hidden="true">
-                      <div className="project-review-header-cell">Project name</div>
+                      <div className="project-review-header-cell">Project name ({projectIndex.length})</div>
                       <div className="project-review-header-cell">Challenges</div>
                       <div className="project-review-header-cell">Next milestone</div>
                     </div>
@@ -941,7 +877,7 @@ export default function Projects({
                     <button
                       key={option.value}
                       type="button"
-                      className={`review-saved-view-btn ${timelineRange === option.value ? 'active' : ''}`}
+                      className={`timeline-range-btn ${timelineRange === option.value ? 'active' : ''}`}
                       onClick={() => setTimelineRange(option.value)}
                     >
                       <span>{option.label}</span>
@@ -954,20 +890,6 @@ export default function Projects({
                 </div>
               </div>
 
-              <div className="projects-review-saved-views timeline-slicers" aria-label="Timeline slices">
-                {reviewSavedViews.map((view) => (
-                  <button
-                    key={view.value}
-                    type="button"
-                    className={`review-saved-view-btn ${reviewSavedView === view.value ? 'active' : ''}`}
-                    onClick={() => setReviewSavedView(view.value)}
-                  >
-                    <span>{view.label}</span>
-                    <span className="review-saved-view-count">{view.count}</span>
-                  </button>
-                ))}
-              </div>
-
               {timelineRows.length > 0 ? (
                 <TimelineExperiment
                   timelineRows={timelineRows}
@@ -978,9 +900,9 @@ export default function Projects({
                   selectedProjectId={selectedProjectId}
                 />
               ) : (
-                <div className="roadmap-list-empty">
-                  <h4>No roadmap rows match these filters</h4>
-                  <p>Try broadening the saved view or clearing one of the current filters.</p>
+                <div className="timeline-list-empty">
+                  <h4>No timeline rows match this search.</h4>
+                  <p>Try broadening the search or changing the current timeline range.</p>
                 </div>
               )}
             </>
@@ -1008,6 +930,7 @@ export default function Projects({
                         <div className="dash-feed-month-label">{group.label}</div>
                         {group.items.map((entry, index) => {
                           const isClickable = Boolean(entry.projectId) || entry.type === 'concept-note';
+                          const activityTypeLabel = ACTIVITY_TYPE_LABELS[entry.type];
                           const handleClick = () => {
                             if (entry.projectId) {
                               onProjectClick(entry.projectId);
@@ -1016,18 +939,45 @@ export default function Projects({
                             }
                           };
 
+                          if (isClickable) {
+                            return (
+                              <button
+                                key={`${group.key}-${index}`}
+                                type="button"
+                                className="activity-item clickable"
+                                onClick={handleClick}
+                              >
+                                <div className="activity-dot" />
+                                <div className="activity-content">
+                                  <div className="activity-title">
+                                    {activityTypeLabel && (
+                                      <span className="activity-type-label" data-type={entry.type}>
+                                        {activityTypeLabel}
+                                      </span>
+                                    )}
+                                    {entry.title}
+                                  </div>
+                                  <div className="activity-meta">
+                                    {entry.project && <>{entry.project} &bull; </>}
+                                    {formatDate(entry.date)}
+                                    {entry.author && <> &bull; {entry.author}</>}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          }
+
                           return (
                             <div
                               key={`${group.key}-${index}`}
-                              className={`activity-item${isClickable ? ' clickable' : ''}`}
-                              onClick={isClickable ? handleClick : undefined}
+                              className="activity-item"
                             >
                               <div className="activity-dot" />
                               <div className="activity-content">
                                 <div className="activity-title">
-                                  {ACTIVITY_TYPE_LABELS[entry.type] && (
+                                  {activityTypeLabel && (
                                     <span className="activity-type-label" data-type={entry.type}>
-                                      {ACTIVITY_TYPE_LABELS[entry.type]}
+                                      {activityTypeLabel}
                                     </span>
                                   )}
                                   {entry.title}
@@ -1156,25 +1106,4 @@ export default function Projects({
       )}
     </section>
   );
-}
-
-function matchesReviewSavedView(row, view) {
-  const reviewBucket = getSafeReviewState(row.reviewSnapshot).bucket;
-  const freshnessBucket = getSafeFreshnessCue(row.freshnessCue).bucket;
-
-  switch (view) {
-    case 'needs-attention':
-      return reviewBucket === 'needs-review';
-    case 'needs-follow-up':
-      return freshnessBucket === 'needs-follow-up';
-    case 'quiet-for-a-while':
-      return freshnessBucket === 'quiet-for-a-while';
-    case 'newly-started':
-      return freshnessBucket === 'newly-started';
-    case 'no-milestone':
-      return (row.milestoneCount ?? 0) === 0;
-    case 'all':
-    default:
-      return true;
-  }
 }

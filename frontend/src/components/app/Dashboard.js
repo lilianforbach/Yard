@@ -147,14 +147,13 @@ function DashboardStreamCard({
 
 function AccountAccessCard({
   accounts,
-  currentUserId,
   loading,
   error,
   onRetry,
   onSelectAccount,
 }) {
   return (
-    <section className="maintenance-card maintenance-card-accounts">
+    <section className="maintenance-card maintenance-card-accounts maintenance-card-operations">
       <div className="maintenance-card-header">
         <div>
           <h4>Account access</h4>
@@ -173,34 +172,27 @@ function AccountAccessCard({
           </button>
         </div>
       ) : accounts.length > 0 ? (
-        <div className="maintenance-item-list maintenance-account-list">
-          {accounts.map((account) => {
-            const isCurrentUser = account.id === currentUserId;
-            const isPendingInvite = account.activationPending;
-            return (
-              <button
-                key={account.id}
-                type="button"
-                className="maintenance-item account-access-item"
-                onClick={() => onSelectAccount(account)}
-                disabled={isCurrentUser || isPendingInvite}
-              >
-                <span className="maintenance-item-title">
-                  {account.linkedPersonName || account.name || account.email}
-                </span>
-                <span className="maintenance-item-meta">
-                  {account.email}
-                  {account.linkedPersonRole ? ` • ${account.linkedPersonRole}` : ''}
-                  {isCurrentUser ? ' • current session' : ''}
-                  {isPendingInvite ? ' • pending invite' : ''}
-                </span>
-                <span className="maintenance-item-meta">{getAccountAccessStatus(account)}</span>
-              </button>
-            );
-          })}
+        <div className="maintenance-item-list scrollable">
+          {accounts.map((account) => (
+            <button
+              key={account.id}
+              type="button"
+              className="maintenance-item"
+              onClick={() => onSelectAccount(account)}
+            >
+              <span className="maintenance-item-title">
+                {account.linkedPersonName || account.name || account.email}
+              </span>
+              <span className="maintenance-item-meta">
+                {account.email}
+                {account.linkedPersonRole ? ` • ${account.linkedPersonRole}` : ''}
+              </span>
+              <span className="maintenance-item-meta">{getAccountAccessStatus(account)}</span>
+            </button>
+          ))}
         </div>
       ) : (
-        <p className="maintenance-empty">No user accounts are available for reset.</p>
+        <p className="maintenance-empty">No active accounts are currently available for reset.</p>
       )}
     </section>
   );
@@ -230,7 +222,7 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
 
   const dashboardResourceKeys = ['activity', 'milestones', 'conceptNotes', 'events', 'publications', 'projects', 'people'];
   const linkedPerson = getLinkedPerson(permissions, getPerson);
-  const maintenanceAccess = canAccessMaintenance(permissions, linkedPerson);
+  const maintenanceAccess = canAccessMaintenance(permissions);
   const reviewAccess = canAccessProjectReview(permissions, linkedPerson);
   const currentView = maintenanceAccess && searchParams.get('view') === 'maintenance' ? 'maintenance' : 'overview';
   const adminMaintenanceAccess = Boolean(permissions?.isAdmin);
@@ -276,7 +268,8 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         description: 'Missing research summaries or contact details.',
         count: maintenanceSnapshot.profilesToComplete.length,
         empty: 'No profiles currently need completion.',
-        items: maintenanceSnapshot.profilesToComplete.slice(0, 5).map((item) => ({
+        scrollable: maintenanceSnapshot.profilesToComplete.length > 8,
+        items: maintenanceSnapshot.profilesToComplete.map((item) => ({
           id: item.person.id,
           title: item.person.name,
           meta: `Missing ${item.missingFields.join(', ')}${item.lastUpdated ? ` • updated ${formatDaysAgo(item.freshnessDays)}` : ' • no profile update yet'}`,
@@ -289,7 +282,8 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         description: 'No recent published activity or no surfaced activity yet.',
         count: maintenanceSnapshot.projectsToRefresh.length,
         empty: 'No projects currently need a refresh pass.',
-        items: maintenanceSnapshot.projectsToRefresh.slice(0, 5).map((item) => ({
+        scrollable: maintenanceSnapshot.projectsToRefresh.length > 8,
+        items: maintenanceSnapshot.projectsToRefresh.map((item) => ({
           id: item.project.id,
           title: item.project.title,
           meta: item.lastActivity
@@ -304,7 +298,8 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         description: 'Projects that still need a visible next milestone.',
         count: maintenanceSnapshot.projectsWithoutMilestones.length,
         empty: 'All projects currently have at least one milestone.',
-        items: maintenanceSnapshot.projectsWithoutMilestones.slice(0, 5).map((item) => ({
+        scrollable: maintenanceSnapshot.projectsWithoutMilestones.length > 8,
+        items: maintenanceSnapshot.projectsWithoutMilestones.map((item) => ({
           id: item.project.id,
           title: item.project.title,
           meta: `${item.lead ? item.lead.name : 'Lead not assigned'}${item.lastActivity?.date ? ` • latest activity ${formatDate(item.lastActivity.date)}` : ''}`,
@@ -317,7 +312,8 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         description: 'Active notes that need clearer next steps or are nearing the end of their active window.',
         count: maintenanceSnapshot.notesToFollowUp.length,
         empty: 'No active concept notes currently need stewardship.',
-        items: maintenanceSnapshot.notesToFollowUp.slice(0, 5).map((item) => ({
+        scrollable: maintenanceSnapshot.notesToFollowUp.length > 8,
+        items: maintenanceSnapshot.notesToFollowUp.map((item) => ({
           id: item.note.id,
           title: item.note.title,
           meta: [
@@ -338,6 +334,11 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
       account.id === updatedAccount.id ? updatedAccount : account
     )));
   }, []);
+
+  const actionableAdminAccounts = useMemo(
+    () => adminAccounts.filter((account) => account.id !== user?.id && !account.activationPending),
+    [adminAccounts, user?.id]
+  );
 
   const updates = useMemo(
     () => activity
@@ -531,16 +532,6 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
             <p>Keep profiles, access, projects, and concept notes quietly up to date without turning the shared dashboard into a review queue.</p>
           </div>
           <div className="dash-maintenance-grid">
-            {adminMaintenanceAccess && (
-              <AccountAccessCard
-                accounts={adminAccounts}
-                currentUserId={user?.id}
-                loading={adminAccountsLoading}
-                error={adminAccountsError}
-                onRetry={fetchAdminAccounts}
-                onSelectAccount={setSelectedAccount}
-              />
-            )}
             {maintenanceCards.map((card) => (
               <section key={card.key} className="maintenance-card">
                 <div className="maintenance-card-header">
@@ -551,7 +542,7 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
                   <span className="maintenance-count">{card.count}</span>
                 </div>
                 {card.items.length > 0 ? (
-                  <div className="maintenance-item-list">
+                  <div className={`maintenance-item-list${card.scrollable ? ' scrollable' : ''}`}>
                     {card.items.map((item) => (
                       <button key={item.id} type="button" className="maintenance-item" onClick={item.onClick}>
                         <span className="maintenance-item-title">{item.title}</span>
@@ -565,6 +556,17 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
               </section>
             ))}
           </div>
+          {adminMaintenanceAccess && (
+            <div className="maintenance-operations-section">
+              <AccountAccessCard
+                accounts={actionableAdminAccounts}
+                loading={adminAccountsLoading}
+                error={adminAccountsError}
+                onRetry={fetchAdminAccounts}
+                onSelectAccount={setSelectedAccount}
+              />
+            </div>
+          )}
         </div>
       ) : (
         <div className="dashboard-gallery">

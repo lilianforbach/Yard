@@ -989,10 +989,6 @@ textarea {
   margin-right: 0.4rem;
   vertical-align: middle;
 }
-.activity-type-label[data-type="feedback"] {
-  color: var(--color-lakemere);
-  background: rgba(27, 107, 74, 0.08);
-}
 .activity-type-label[data-type="challenge"] {
   color: #9a5c00;
   background: rgba(203, 140, 54, 0.12);
@@ -1002,10 +998,6 @@ textarea {
   background: rgba(27, 107, 74, 0.1);
 }
 .activity-type-label[data-type="concept-note"] { color: var(--color-aldhelm); background: rgba(46, 90, 136, 0.08); }
-.activity-type-label[data-type="profile-update"] {
-  color: var(--color-text);
-  background: rgba(93, 108, 121, 0.12);
-}
 .activity-meta { font-size: 0.75rem; color: var(--color-text-light); }
 
 /* ── Dashboard gallery ── */
@@ -1168,7 +1160,6 @@ textarea {
 .dash-maintenance-intro {
   padding: 0;
 }
-.dash-maintenance-intro .dash-section-title { margin-bottom: 0.35rem; }
 .dash-maintenance-intro p {
   font-size: 0.8rem;
   line-height: 1.5;
@@ -1221,6 +1212,11 @@ textarea {
   flex-direction: column;
   gap: 0;
 }
+.maintenance-item-list.scrollable {
+  max-height: 20rem;
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
 .maintenance-item {
   width: 100%;
   text-align: left;
@@ -1265,17 +1261,12 @@ textarea {
 .maintenance-inline-action {
   flex-shrink: 0;
 }
-.maintenance-account-list {
-  max-height: 18rem;
-  overflow-y: auto;
-  padding-right: 0.25rem;
+.maintenance-operations-section {
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.25rem;
 }
-.account-access-item:disabled {
-  cursor: default;
-  opacity: 0.72;
-}
-.account-access-item:disabled:hover {
-  background: transparent;
+.maintenance-card-operations {
+  gap: 0.8rem;
 }
 
 /* ─── EDITABLE FIELDS (B20) ─────────────────────────────── */
@@ -2409,24 +2400,13 @@ textarea.editable-field-input { min-height: 4rem; }
   flex-wrap: wrap;
   flex: 0 0 auto;
 }
-.projects-review-action-note {
-  padding: 0.8rem 1rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius);
-  background: var(--color-card-soft);
+.projects-review-helper-copy {
+  margin: -0.2rem 0 0;
   font-size: 0.79rem;
   line-height: 1.5;
   color: var(--color-text-light);
 }
-.projects-review-saved-views {
-  display: flex;
-  gap: 0.55rem;
-  flex-wrap: wrap;
-}
-.timeline-slicers {
-  margin-top: -0.1rem;
-}
-.review-saved-view-btn {
+.timeline-range-btn {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
@@ -2439,33 +2419,14 @@ textarea.editable-field-input { min-height: 4rem; }
   font-weight: 500;
   cursor: pointer;
 }
-.review-saved-view-btn:hover {
+.timeline-range-btn:hover {
   border-color: color-mix(in srgb, var(--color-interactive) 38%, transparent);
   color: var(--color-text);
 }
-.review-saved-view-btn.active {
+.timeline-range-btn.active {
   background: var(--color-pill-bg);
   border-color: color-mix(in srgb, var(--color-interactive) 28%, transparent);
   color: var(--color-interactive);
-}
-.review-saved-view-count {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.35rem;
-  height: 1.35rem;
-  padding: 0 0.35rem;
-  border-radius: 999px;
-  background: var(--color-card-soft);
-  border: 1px solid var(--color-border);
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: var(--color-text-light);
-}
-.review-saved-view-btn.active .review-saved-view-count {
-  color: var(--color-interactive);
-  border-color: color-mix(in srgb, var(--color-interactive) 22%, transparent);
-  background: color-mix(in srgb, var(--color-pill-bg) 78%, var(--color-card-soft));
 }
 .projects-review-list {
   background: var(--color-card);
@@ -2522,6 +2483,13 @@ textarea.editable-field-input { min-height: 4rem; }
 .project-review-row.active {
   background: rgba(46, 90, 136, 0.06);
   box-shadow: inset 3px 0 0 var(--color-aldhelm);
+}
+.projects-review-mode.projects-panel-open .project-review-row {
+  grid-template-columns: 1fr;
+  gap: 0.6rem;
+}
+.projects-review-mode.projects-panel-open .project-review-header {
+  display: none;
 }
 .project-review-main {
   min-width: 0;
@@ -2606,6 +2574,11 @@ textarea.editable-field-input { min-height: 4rem; }
   max-height: min(68vh, 780px);
 }
 .activity-item.clickable {
+  width: 100%;
+  border: none;
+  background: transparent;
+  text-align: left;
+  font: inherit;
   cursor: pointer;
 }
 .activity-item.clickable:hover {
@@ -4743,15 +4716,15 @@ a.publication-list-row {
 .roadmap-list-note.is-overdue { color: var(--color-status-red); }
 .roadmap-list-note.is-approaching { color: var(--color-warning-text); }
 .roadmap-list-note.is-completed { color: var(--color-status-green); }
-.roadmap-list-empty {
+.timeline-list-empty {
   padding: 1.3rem 1rem;
 }
-.roadmap-list-empty h4 {
+.timeline-list-empty h4 {
   font-size: 0.88rem;
   font-weight: 600;
   margin-bottom: 0.3rem;
 }
-.roadmap-list-empty p {
+.timeline-list-empty p {
   font-size: 0.8rem;
   color: var(--color-text-light);
 }
@@ -5118,7 +5091,7 @@ a.publication-list-row {
   min-width: 980px;
   position: relative;
   isolation: isolate;
-  padding-bottom: 8.5rem;
+  padding-bottom: 2rem;
 }
 .timeline-lab-row {
   display: flex;
@@ -5214,6 +5187,17 @@ a.publication-list-row {
   min-height: inherit;
   overflow: visible;
   isolation: isolate;
+}
+.projects-review-mode.projects-panel-open .timeline-lab-label-spacer,
+.projects-review-mode.projects-panel-open .timeline-lab-row-label {
+  width: 168px;
+}
+.projects-review-mode.projects-panel-open .timeline-lab-header-months,
+.projects-review-mode.projects-panel-open .timeline-lab-track {
+  min-width: 680px;
+}
+.projects-review-mode.projects-panel-open .timeline-lab-body {
+  min-width: 848px;
 }
 .timeline-lab-track-focus {
   position: absolute;
@@ -7368,9 +7352,6 @@ a.publication-list-row {
   }
   .projects-review-count {
     align-self: flex-start;
-  }
-  .projects-review-saved-views {
-    gap: 0.45rem;
   }
   .dashboard-view-controls .view-toggle {
     width: 100%;

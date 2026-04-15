@@ -308,7 +308,7 @@ export default function People({ onPersonClick }) {
   ), [visibleEquipmentMatches]);
 
   const linkedPerson = getLinkedPerson(permissions, getPerson);
-  const maintenanceAccess = canAccessMaintenance(permissions, linkedPerson);
+  const maintenanceAccess = canAccessMaintenance(permissions);
   const canOnboard = canOnboardMembers(permissions);
 
   const handleOnboardComplete = async (result, { openProfile = false } = {}) => {
