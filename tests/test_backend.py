@@ -365,6 +365,8 @@ def test_startup_migrations_do_not_overwrite_runtime_project_or_people_changes(i
         assert cleared_equipment.json()["equipment"] == []
 
     with TestClient(app) as second_client:
+        login(second_client)
+
         recipegraph = second_client.get("/api/projects/recipegraph")
         assert recipegraph.status_code == 200
         assert recipegraph.json()["slidesUrl"] == ""
@@ -557,6 +559,27 @@ def test_write_endpoints_require_auth_and_validate_input(client):
     assert "completedDate" not in reopen_response.json()
 
 
+def test_programme_data_read_endpoints_require_auth(client):
+    protected_routes = [
+        "/api/institutions",
+        "/api/skill-taxonomy",
+        "/api/people",
+        "/api/people/priya",
+        "/api/projects",
+        "/api/projects/sousbot",
+        "/api/publications",
+        "/api/events",
+        "/api/milestones",
+        "/api/conceptnotes",
+        "/api/dashboard/stats",
+        "/api/dashboard/activity",
+    ]
+
+    for route in protected_routes:
+        response = client.get(route)
+        assert response.status_code == 401, route
+
+
 def test_project_updates_and_challenges_persist_to_store(client):
     register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
 
@@ -718,13 +741,10 @@ def test_feedback_visibility_respects_audience_scopes(client):
     client.cookies.clear()
 
     public_project = client.get("/api/projects/sousbot")
-    assert public_project.status_code == 200
-    assert public_project.json()["feedback"] == []
+    assert public_project.status_code == 401
 
     public_projects = client.get("/api/projects")
-    assert public_projects.status_code == 200
-    sousbot_public = next(project for project in public_projects.json() if project["id"] == "sousbot")
-    assert sousbot_public["feedback"] == []
+    assert public_projects.status_code == 401
 
     register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
     lead_project = client.get("/api/projects/sousbot")

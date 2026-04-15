@@ -2536,12 +2536,18 @@ async def create_account_for_person(
 
 
 @api_router.get("/institutions")
-async def get_institutions() -> List[Dict[str, Any]]:
+async def get_institutions(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    del user
     return await list_collection("institutions", limit=100)
 
 
 @api_router.get("/skill-taxonomy")
-async def get_skill_taxonomy() -> Dict[str, Any]:
+async def get_skill_taxonomy(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    del user
     seed_path = get_seed_file()
     if seed_path and seed_path.is_file():
         import json as _json
@@ -2552,12 +2558,19 @@ async def get_skill_taxonomy() -> Dict[str, Any]:
 
 
 @api_router.get("/people")
-async def get_people() -> List[Dict[str, Any]]:
+async def get_people(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    del user
     return await list_collection("people", limit=200)
 
 
 @api_router.get("/people/{person_id}")
-async def get_person(person_id: str) -> Dict[str, Any]:
+async def get_person(
+    person_id: str,
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    del user
     item = await get_by_field("people", "id", person_id)
     if not item:
         raise HTTPException(status_code=404, detail="Person not found")
@@ -2641,24 +2654,22 @@ async def update_person(
 
 
 @api_router.get("/projects")
-async def get_projects(user: Optional[Dict[str, Any]] = Depends(get_optional_user)) -> List[Dict[str, Any]]:
+async def get_projects(user: Dict[str, Any] = Depends(get_current_user)) -> List[Dict[str, Any]]:
     projects = await list_collection("projects", limit=200)
-    linked_person = await get_linked_person(user) if user else None
-    viewer = user or {}
-    return [redact_project_feedback_for_viewer(project, viewer, linked_person) for project in projects]
+    linked_person = await get_linked_person(user)
+    return [redact_project_feedback_for_viewer(project, user, linked_person) for project in projects]
 
 
 @api_router.get("/projects/{project_id}")
 async def get_project(
     project_id: str,
-    user: Optional[Dict[str, Any]] = Depends(get_optional_user),
+    user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
     item = await get_by_field("projects", "id", project_id)
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
-    linked_person = await get_linked_person(user) if user else None
-    viewer = user or {}
-    return redact_project_feedback_for_viewer(item, viewer, linked_person)
+    linked_person = await get_linked_person(user)
+    return redact_project_feedback_for_viewer(item, user, linked_person)
 
 
 @api_router.post("/projects")
@@ -3166,17 +3177,26 @@ async def resolve_project_challenge(
 
 
 @api_router.get("/publications")
-async def get_publications() -> List[Dict[str, Any]]:
+async def get_publications(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    del user
     return await list_collection("publications", limit=200)
 
 
 @api_router.get("/events")
-async def get_events() -> List[Dict[str, Any]]:
+async def get_events(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    del user
     return await list_collection("events", limit=100)
 
 
 @api_router.get("/milestones")
-async def get_milestones() -> List[Dict[str, Any]]:
+async def get_milestones(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    del user
     items = await list_collection("milestones", limit=500)
     for milestone in items:
         milestone["computedStatus"] = compute_milestone_status(milestone)
@@ -3491,7 +3511,10 @@ async def undo_concept_note_active_extension(
 
 
 @api_router.get("/dashboard/stats")
-async def get_dashboard_stats() -> Dict[str, int]:
+async def get_dashboard_stats(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, int]:
+    del user
     people_count = await count_collection("people")
     projects_count = await count_collection("projects")
     publications_count = await count_collection("publications")
@@ -3524,10 +3547,13 @@ async def get_dashboard_stats() -> Dict[str, int]:
 
 
 @api_router.get("/dashboard/activity")
-async def get_dashboard_activity() -> List[Dict[str, Any]]:
+async def get_dashboard_activity(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
     """Return the full activity feed — updates, challenges, and concept note
     creation events — sorted newest-first. No cap: the frontend handles
     pagination / scroll."""
+    del user
     projects = await list_collection("projects", limit=200)
     concept_notes = await list_collection("conceptnotes", limit=200)
     people = await list_collection("people", limit=400)
