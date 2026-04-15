@@ -8,6 +8,7 @@ function parseDay(value) {
 }
 
 export function isConceptNoteProgressed(note) {
+  if (note?.frontstageState === 'progressed') return true;
   return (note?.progressSignals || []).length > 0;
 }
 
@@ -25,10 +26,15 @@ export function isConceptNoteWithinActiveWindow(note, referenceDay = new Date())
 }
 
 export function isConceptNoteActive(note, referenceDay = new Date()) {
+  if (note?.frontstageState === 'active') return true;
+  if (note?.frontstageState === 'progressed' || note?.frontstageState === 'all') return false;
   return isConceptNoteWithinActiveWindow(note, referenceDay) && !isConceptNoteProgressed(note);
 }
 
 export function getConceptNoteFrontstageState(note, referenceDay = new Date()) {
+  if (note?.frontstageState === 'active' || note?.frontstageState === 'progressed' || note?.frontstageState === 'all') {
+    return note.frontstageState;
+  }
   if (isConceptNoteProgressed(note)) return 'progressed';
   if (isConceptNoteWithinActiveWindow(note, referenceDay)) return 'active';
   return 'all';

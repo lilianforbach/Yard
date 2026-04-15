@@ -1610,12 +1610,16 @@ def compute_concept_note_active_until(created_at: str, days: int = CONCEPT_NOTE_
     return _format_day(_parse_day(created_at) + timedelta(days=days))
 
 
+def is_concept_note_progressed(note: Dict[str, Any]) -> bool:
+    return bool(note.get("progressSignals") or [])
+
+
 def is_concept_note_active(note: Dict[str, Any], reference_day: Optional[str] = None) -> bool:
     active_until = note.get("activeUntil")
     if not active_until:
         return False
     comparison_day = reference_day or utc_now().strftime("%Y-%m-%d")
-    return _parse_day(active_until) >= _parse_day(comparison_day)
+    return _parse_day(active_until) >= _parse_day(comparison_day) and not is_concept_note_progressed(note)
 
 
 def get_concept_note_actor_id(user: Dict[str, Any]) -> str:
@@ -1672,6 +1676,40 @@ def can_edit_concept_note_content(
     if created_by and created_by in actor_ids:
         return True
     return bool(actor_ids & contributors)
+
+
+def can_manage_concept_note_contributors(
+    user: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]],
+    note: Dict[str, Any],
+) -> bool:
+    if is_admin(user):
+        return True
+    if linked_person is None:
+        return False
+
+    actor_ids = set(get_concept_note_actor_ids(user, linked_person))
+    created_by = (note.get("createdBy") or "").strip()
+    return bool(created_by and created_by in actor_ids)
+
+
+def serialize_concept_note_for_user(
+    note: Dict[str, Any],
+    user: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    serialized = clone_document(note)
+    if is_concept_note_progressed(note):
+        serialized["frontstageState"] = "progressed"
+    elif is_concept_note_active(note):
+        serialized["frontstageState"] = "active"
+    else:
+        serialized["frontstageState"] = "all"
+    if not can_access_review_surface(user, linked_person):
+        serialized.pop("activeUntil", None)
+    if not is_admin(user):
+        serialized.pop("lastActiveExtension", None)
+    return serialized
 
 
 def build_concept_note_activity_author(note: Dict[str, Any], people_by_id: Dict[str, str]) -> str:
@@ -3274,8 +3312,12 @@ async def reopen_milestone(
 
 
 @api_router.get("/conceptnotes")
-async def get_concept_notes() -> List[Dict[str, Any]]:
-    return await list_collection("conceptnotes", limit=200)
+async def get_concept_notes(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    linked = await get_linked_person(user)
+    concept_notes = await list_collection("conceptnotes", limit=200)
+    return [serialize_concept_note_for_user(note, user, linked) for note in concept_notes]
 
 
 @api_router.post("/conceptnotes")
@@ -3308,7 +3350,7 @@ async def create_concept_note(
     doc["progressSignals"] = []
     doc["relatedConceptNoteIds"] = []
     await insert_one("conceptnotes", doc)
-    return doc
+    return serialize_concept_note_for_user(doc, user, linked)
 
 
 @api_router.put("/conceptnotes/{note_id}")
@@ -3326,21 +3368,22 @@ async def update_concept_note(
     if not update_payload:
         raise HTTPException(status_code=400, detail="No valid fields to update")
 
-    admin_only_fields = {"activeUntil", "progressSignals", "relatedConceptNoteIds"}
+    admin_only_fields = {"activeUntil", "progressSignals", "relatedConceptNoteIds", "relatedProjects"}
     if any(field_name in update_payload for field_name in admin_only_fields) and not is_admin(user):
         raise HTTPException(status_code=403, detail="Only admins can update concept note stewardship")
 
     ordinary_content_fields = {
         "title",
-        "contributors",
         "rationale",
         "relevance",
         "preliminaryInsights",
         "nextSteps",
-        "relatedProjects",
     }
     if any(field_name in update_payload for field_name in ordinary_content_fields) and not can_edit_concept_note_content(user, linked, existing):
         raise HTTPException(status_code=403, detail="Only concept note contributors or admins can edit concept note content")
+
+    if "contributors" in update_payload and not can_manage_concept_note_contributors(user, linked, existing):
+        raise HTTPException(status_code=403, detail="Only the concept note creator or admin can update contributors")
 
     if "contributors" in update_payload:
         for contributor_id in update_payload["contributors"]:
@@ -3390,7 +3433,7 @@ async def update_concept_note(
         update_payload["updatedAt"] = utc_now().strftime("%Y-%m-%d")
 
     updated = await update_fields("conceptnotes", "id", note_id, update_payload)
-    return updated
+    return serialize_concept_note_for_user(updated, user, linked)
 
 
 @api_router.post("/conceptnotes/{note_id}/extend-active")
@@ -3424,7 +3467,8 @@ async def extend_concept_note_active_window(
             "lastActiveExtension": extension_record,
         },
     )
-    return updated
+    linked = await get_linked_person(user)
+    return serialize_concept_note_for_user(updated, user, linked)
 
 
 @api_router.post("/conceptnotes/{note_id}/undo-active-extension")
@@ -3450,7 +3494,8 @@ async def undo_concept_note_active_extension(
         {"activeUntil": previous},
         unset_fields=["lastActiveExtension"],
     )
-    return updated
+    linked = await get_linked_person(user)
+    return serialize_concept_note_for_user(updated, user, linked)
 
 
 @api_router.get("/dashboard/stats")
@@ -3464,7 +3509,11 @@ async def get_dashboard_stats() -> Dict[str, int]:
     projects = await list_collection("projects", limit=200)
     challenges = []
     for project in projects:
-        challenges.extend(project.get("currentChallenges", []))
+        challenges.extend(
+            challenge
+            for challenge in (project.get("currentChallenges") or [])
+            if is_entry_surfaced(challenge)
+        )
     milestones_due = sum(
         1 for milestone in milestones if compute_milestone_status(milestone) in ("approaching", "overdue")
     )
