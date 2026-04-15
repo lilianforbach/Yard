@@ -52,7 +52,6 @@ export function canCreateProjects(permissions, linkedPerson) {
 
 export function canCreateGlobalMilestones(permissions, linkedPerson, projects = []) {
   if (permissions?.isAdmin) return true;
-  if (canAccessMaintenance(permissions, linkedPerson)) return true;
   if (!linkedPerson?.id) return false;
 
   return projects.some((project) => {

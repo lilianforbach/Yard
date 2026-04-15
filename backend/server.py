@@ -1031,14 +1031,6 @@ def is_project_member(project: Dict[str, Any], linked_person: Optional[Dict[str,
     return linked_person.get("id") in get_project_member_ids(project)
 
 
-def is_programme_manager(linked_person: Optional[Dict[str, Any]]) -> bool:
-    if linked_person is None:
-        return False
-    role = linked_person.get("role")
-    title = (linked_person.get("title") or "").strip().lower()
-    return role in {"staff", "coordinator", "management"} and "programme manager" in title
-
-
 VALID_FEEDBACK_AUDIENCES = {"lead", "team", "review"}
 VALID_FEEDBACK_BASE_AUDIENCES = {"lead", "team"}
 

@@ -121,6 +121,7 @@ export default function ConceptNotes() {
   const [stewardshipError, setStewardshipError] = useState('');
   const [relatedDraft, setRelatedDraft] = useState([]);
   const [relatedProjectDraft, setRelatedProjectDraft] = useState([]);
+  const canCreateNote = Boolean(linkedPerson?.id);
 
   const peopleOptions = useMemo(
     () => people.map((person) => ({ value: person.id, label: person.name })),
@@ -255,6 +256,10 @@ export default function ConceptNotes() {
   }
 
   const openForm = () => {
+    if (!canCreateNote) {
+      showToast('Only signed-in programme members with a profile can create concept notes.', 'error');
+      return;
+    }
     setFormMode('create');
     setEditingNoteId(null);
     setForm(buildInitialForm(linkedPerson?.id));
@@ -824,7 +829,7 @@ export default function ConceptNotes() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        {linkedPerson?.id && (
+        {canCreateNote && (
           <button data-testid="new-concept-note-btn" className="action-btn" onClick={openForm}>
             <Plus size={16} /> Add Concept Note
           </button>
