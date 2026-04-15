@@ -10,7 +10,7 @@ const markdownComponents = {
   a: (props) => <a {...props} target="_blank" rel="noopener noreferrer" />,
 };
 
-export default function LatexContent({ text, className = '', emptyText = null }) {
+export default function LatexContent({ text, className = '', emptyText = null, rawMarkdown = false }) {
   const content = typeof text === 'string' ? text.trim() : '';
 
   if (!content) {
@@ -24,7 +24,7 @@ export default function LatexContent({ text, className = '', emptyText = null })
         rehypePlugins={[rehypeKatex]}
         components={markdownComponents}
       >
-        {latexToMarkdown(content)}
+        {rawMarkdown ? content : latexToMarkdown(content)}
       </ReactMarkdown>
     </div>
   );

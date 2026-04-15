@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { ChevronRight, Plus, Search, X } from 'lucide-react';
+import { ChevronRight, PencilLine, Plus, Search, X } from 'lucide-react';
 import api from '../../api';
 import { useAuth } from '../../contexts/AuthContext';
 import { useData } from '../../contexts/DataContext';
@@ -17,6 +17,7 @@ import {
 } from '../../lib/conceptNotes';
 import { canAccessMaintenance, getConceptNoteTrustCue } from '../../lib/maintenance';
 import { getLinkedPerson } from '../../lib/roleAccess';
+import { canAccessProjectReview } from '../../lib/projectReview';
 import { matchesSearchQuery } from '../../lib/search';
 import SlidePanel from './SlidePanel';
 import { SectionNotice, SectionSkeleton } from './SectionState';
@@ -43,7 +44,17 @@ function buildInitialForm(linkedPersonId = '') {
     relevance: '',
     preliminaryInsights: '',
     nextSteps: '',
-    relatedProjects: [],
+  };
+}
+
+function buildFormFromNote(note) {
+  return {
+    title: note?.title || '',
+    contributors: note?.contributors || [],
+    rationale: note?.rationale || '',
+    relevance: note?.relevance || '',
+    preliminaryInsights: note?.preliminaryInsights || '',
+    nextSteps: note?.nextSteps || '',
   };
 }
 
@@ -93,11 +104,14 @@ export default function ConceptNotes() {
 
   const linkedPerson = getLinkedPerson(permissions, getPerson);
   const maintenanceAccess = canAccessMaintenance(permissions, linkedPerson);
+  const reviewAccess = canAccessProjectReview(permissions, linkedPerson);
   const requestedNoteId = searchParams.get('note');
 
   const [filter, setFilter] = useState('active');
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
+  const [formMode, setFormMode] = useState('create');
+  const [editingNoteId, setEditingNoteId] = useState(null);
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   const [form, setForm] = useState(() => buildInitialForm(linkedPerson?.id));
   const [formError, setFormError] = useState('');
@@ -106,6 +120,8 @@ export default function ConceptNotes() {
   const [progressDraft, setProgressDraft] = useState(() => buildProgressDraft(null));
   const [stewardshipError, setStewardshipError] = useState('');
   const [relatedDraft, setRelatedDraft] = useState([]);
+  const [relatedProjectDraft, setRelatedProjectDraft] = useState([]);
+  const canCreateNote = Boolean(linkedPerson?.id);
 
   const peopleOptions = useMemo(
     () => people.map((person) => ({ value: person.id, label: person.name })),
@@ -118,10 +134,32 @@ export default function ConceptNotes() {
   );
 
   const selectedNote = conceptNotes.find((note) => note.id === selectedNoteId) || null;
+  const editingNote = conceptNotes.find((note) => note.id === editingNoteId) || null;
   const selectedState = selectedNote ? getConceptNoteFrontstageState(selectedNote) : 'all';
   const selectedContributorLabel = selectedNote ? getConceptNoteContributorLabel(selectedNote, getPerson) : '';
   const selectedFreshnessDate = selectedNote ? getConceptNoteSortDate(selectedNote) : '';
   const selectedTrustCue = selectedNote ? getConceptNoteTrustCue(selectedNote) : null;
+  const selectedContributorNames = useMemo(
+    () => (selectedNote?.contributors || [])
+      .map((contributorId) => getPerson(contributorId)?.name || contributorId)
+      .filter(Boolean),
+    [getPerson, selectedNote]
+  );
+  const canEditSelectedNote = Boolean(
+    selectedNote && (
+      permissions?.isAdmin
+      || (linkedPerson?.id && (
+        selectedNote.createdBy === linkedPerson.id
+        || (selectedNote.contributors || []).includes(linkedPerson.id)
+      ))
+    )
+  );
+  const canManageSelectedContributors = Boolean(
+    selectedNote && (
+      permissions?.isAdmin
+      || (linkedPerson?.id && selectedNote.createdBy === linkedPerson.id)
+    )
+  );
 
   const relatedConceptNoteOptions = useMemo(
     () => conceptNotes
@@ -189,6 +227,7 @@ export default function ConceptNotes() {
     if (selectedNote) {
       setProgressDraft(buildProgressDraft(selectedNote));
       setRelatedDraft(selectedNote.relatedConceptNoteIds || []);
+      setRelatedProjectDraft(selectedNote.relatedProjects || []);
       setStewardshipError('');
     }
   }, [selectedNote]);
@@ -217,13 +256,29 @@ export default function ConceptNotes() {
   }
 
   const openForm = () => {
+    if (!canCreateNote) {
+      showToast('Only signed-in programme members with a profile can create concept notes.', 'error');
+      return;
+    }
+    setFormMode('create');
+    setEditingNoteId(null);
     setForm(buildInitialForm(linkedPerson?.id));
+    setFormError('');
+    setShowForm(true);
+  };
+
+  const openEditForm = (note) => {
+    setFormMode('edit');
+    setEditingNoteId(note.id);
+    setForm(buildFormFromNote(note));
     setFormError('');
     setShowForm(true);
   };
 
   const closeForm = () => {
     setShowForm(false);
+    setFormMode('create');
+    setEditingNoteId(null);
     setFormError('');
   };
 
@@ -231,21 +286,75 @@ export default function ConceptNotes() {
     e.preventDefault();
     setFormError('');
 
-    if (!form.title.trim() || form.contributors.length === 0 || !form.rationale.trim()) {
-      setFormError('Please provide a title, at least one contributor, and a rationale.');
+    if (formMode === 'create' && !linkedPerson?.id) {
+      setFormError('Concept notes can only be created by signed-in programme members with a profile.');
+      return;
+    }
+
+    if (!form.title.trim() || !form.rationale.trim()) {
+      setFormError(
+        formMode === 'create'
+          ? 'Please provide a title, at least one contributor, and a rationale.'
+          : 'Please provide a title and a rationale.'
+      );
+      return;
+    }
+
+    if (formMode === 'create' && form.contributors.length === 0) {
+      setFormError('Please provide at least one contributor.');
+      return;
+    }
+
+    if (formMode === 'create' && !form.contributors.includes(linkedPerson.id)) {
+      setFormError('Include yourself as a contributor when creating a concept note.');
+      return;
+    }
+
+    if (formMode === 'edit' && canManageSelectedContributors && form.contributors.length === 0) {
+      setFormError('Please keep at least one contributor on the concept note.');
+      return;
+    }
+
+    if (
+      formMode === 'edit'
+      && canManageSelectedContributors
+      && !permissions?.isAdmin
+      && linkedPerson?.id
+      && !form.contributors.includes(linkedPerson.id)
+    ) {
+      setFormError('Keep yourself in the contributor list, or ask an admin to make the change.');
       return;
     }
 
     setSubmitting(true);
     try {
-      await api.post('/conceptnotes', form);
+      if (formMode === 'create') {
+        await api.post('/conceptnotes', form);
+      } else if (editingNote) {
+        const payload = {
+          title: form.title.trim(),
+          rationale: form.rationale.trim(),
+          relevance: form.relevance.trim(),
+          preliminaryInsights: form.preliminaryInsights.trim(),
+          nextSteps: form.nextSteps.trim(),
+        };
+        if (canManageSelectedContributors) {
+          payload.contributors = form.contributors;
+        }
+        await api.put(`/conceptnotes/${editingNote.id}`, payload);
+      }
       await refreshConceptNotes();
       closeForm();
-      showToast('Concept note created successfully');
+      showToast(formMode === 'create' ? 'Concept note created successfully' : 'Concept note updated');
     } catch (err) {
-      console.error('Failed to create concept note:', err);
-      setFormError('Failed to create concept note. Please try again.');
-      showToast('Failed to create concept note', 'error');
+      console.error(`Failed to ${formMode === 'create' ? 'create' : 'update'} concept note:`, err);
+      const detail = err.response?.data?.detail;
+      setFormError(
+        typeof detail === 'string'
+          ? detail
+          : `Failed to ${formMode === 'create' ? 'create' : 'update'} concept note. Please try again.`
+      );
+      showToast(`Failed to ${formMode === 'create' ? 'create' : 'update'} concept note`, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -375,6 +484,26 @@ export default function ConceptNotes() {
     }
   };
 
+  const handleSaveRelatedProjects = async () => {
+    if (!selectedNote) return;
+    setStewardshipAction('related-projects');
+    setStewardshipError('');
+
+    try {
+      await api.put(`/conceptnotes/${selectedNote.id}`, {
+        relatedProjects: relatedProjectDraft,
+      });
+      await refreshConceptNotes();
+      showToast('Related projects updated');
+    } catch (err) {
+      console.error('Failed to save related projects:', err);
+      setStewardshipError('Could not save related projects just now.');
+      showToast('Failed to save related projects', 'error');
+    } finally {
+      setStewardshipAction('');
+    }
+  };
+
   const closeSelectedNote = () => {
     setSelectedNoteId(null);
     const nextParams = new URLSearchParams(searchParams);
@@ -395,10 +524,21 @@ export default function ConceptNotes() {
       <div className="panel-meta">
         {selectedContributorLabel && <span className="inst-badge">{selectedContributorLabel}</span>}
         {selectedFreshnessDate && <span className="inst-badge">Updated {formatDate(selectedFreshnessDate)}</span>}
-        {!isConceptNoteProgressed(selectedNote) && selectedNote.activeUntil && (
+        {reviewAccess && !isConceptNoteProgressed(selectedNote) && selectedNote.activeUntil && (
           <span className="inst-badge">Active until {formatDate(selectedNote.activeUntil)}</span>
         )}
       </div>
+      {canEditSelectedNote && (
+        <div className="panel-header-actions">
+          <button
+            type="button"
+            className="action-btn small"
+            onClick={() => openEditForm(selectedNote)}
+          >
+            <PencilLine size={14} /> Edit Concept Note
+          </button>
+        </div>
+      )}
     </>
   ) : null;
 
@@ -438,7 +578,7 @@ export default function ConceptNotes() {
 
           {maintenanceAccess && selectedTrustCue && (
             <div className={`admin-record-cue ${selectedTrustCue.tone}`}>
-              <div className="admin-record-cue-label">Coordinator cue</div>
+              <div className="admin-record-cue-label">Admin cue</div>
               <div className="admin-record-cue-headline">{selectedTrustCue.headline}</div>
               <div className="admin-record-cue-note">{selectedTrustCue.note}</div>
             </div>
@@ -506,7 +646,7 @@ export default function ConceptNotes() {
                     type="text"
                     value={progressDraft.note}
                     onChange={(e) => setProgressDraft((current) => ({ ...current, note: e.target.value }))}
-                    placeholder="Short note for programme managers"
+                    placeholder="Short stewardship note"
                     disabled={stewardshipAction !== ''}
                   />
                 </label>
@@ -518,6 +658,30 @@ export default function ConceptNotes() {
                   disabled={stewardshipAction !== ''}
                 >
                   {stewardshipAction === 'progress' ? 'Saving trace...' : 'Add progress trace'}
+                </button>
+              </div>
+            </div>
+
+            <div className="cn-stewardship-block">
+              <h4>Related Projects</h4>
+              <div className="cn-stewardship-form">
+                <label>
+                  <span>Structured links</span>
+                  <TagSelect
+                    options={projectOptions}
+                    value={relatedProjectDraft}
+                    onChange={setRelatedProjectDraft}
+                    placeholder="Search projects..."
+                    disabled={stewardshipAction !== ''}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="action-btn secondary"
+                  onClick={handleSaveRelatedProjects}
+                  disabled={stewardshipAction !== ''}
+                >
+                  {stewardshipAction === 'related-projects' ? 'Saving links...' : 'Save related projects'}
                 </button>
               </div>
             </div>
@@ -665,9 +829,11 @@ export default function ConceptNotes() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button data-testid="new-concept-note-btn" className="action-btn" onClick={openForm}>
-          <Plus size={16} /> Add Concept Note
-        </button>
+        {canCreateNote && (
+          <button data-testid="new-concept-note-btn" className="action-btn" onClick={openForm}>
+            <Plus size={16} /> Add Concept Note
+          </button>
+        )}
       </div>
 
       <div className="conceptnotes-shell">
@@ -704,7 +870,7 @@ export default function ConceptNotes() {
                         {frontstageState === 'progressed' && latestProgressSummary && (
                           <span className="cn-list-signal">{latestProgressSummary.label}</span>
                         )}
-                        {frontstageState === 'active' && note.activeUntil && (
+                        {reviewAccess && frontstageState === 'active' && note.activeUntil && (
                           <span className="cn-list-signal">Active until {formatDate(note.activeUntil)}</span>
                         )}
                       </div>
@@ -741,11 +907,19 @@ export default function ConceptNotes() {
 
       {showForm && (
         <div className="modal-overlay" onClick={closeForm}>
-          <div className="modal-content form-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="New concept note">
+          <div
+            className="modal-content form-modal"
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label={formMode === 'create' ? 'New concept note' : 'Edit concept note'}
+          >
             <button type="button" className="modal-close" onClick={closeForm} aria-label="Close concept note form"><X size={20} /></button>
-            <h2>Share Concept Note</h2>
+            <h2>{formMode === 'create' ? 'Share Concept Note' : 'Edit Concept Note'}</h2>
             <p className="form-helper-copy">
-              Share an early idea worth keeping in view across the programme.
+              {formMode === 'create'
+                ? 'Share an early idea worth keeping in view across the programme.'
+                : 'Refine the core content of this concept note while leaving stewardship actions separate.'}
             </p>
             {formError && <div className="form-error-box">{formError}</div>}
             <form onSubmit={handleSubmit} className="cg-form">
@@ -763,13 +937,20 @@ export default function ConceptNotes() {
               </div>
               <div className="form-field">
                 <label>Contributors</label>
-                <TagSelect
-                  options={peopleOptions}
-                  value={form.contributors}
-                  onChange={(value) => setForm({ ...form, contributors: value })}
-                  placeholder="Search people..."
-                  disabled={submitting}
-                />
+                {formMode === 'edit' && !canManageSelectedContributors ? (
+                  <>
+                    <p>{selectedContributorNames.join(', ') || 'No contributors listed.'}</p>
+                    <p className="form-field-hint">Only the note creator or admin can change contributors.</p>
+                  </>
+                ) : (
+                  <TagSelect
+                    options={peopleOptions}
+                    value={form.contributors}
+                    onChange={(value) => setForm({ ...form, contributors: value })}
+                    placeholder="Search people..."
+                    disabled={submitting}
+                  />
+                )}
               </div>
               <div className="form-field">
                 <label>Rationale</label>
@@ -814,23 +995,13 @@ export default function ConceptNotes() {
                   disabled={submitting}
                 />
               </div>
-              <div className="form-field">
-                <label>Related Projects <span className="form-optional">optional</span></label>
-                <TagSelect
-                  options={projectOptions}
-                  value={form.relatedProjects}
-                  onChange={(values) => setForm({ ...form, relatedProjects: values })}
-                  placeholder="Search projects..."
-                  disabled={submitting}
-                />
-              </div>
               <button data-testid="cn-submit-btn" type="submit" className="action-btn submit-btn" disabled={submitting}>
                 {submitting ? (
                   <>
-                    <span className="spinner"></span> Creating...
+                    <span className="spinner"></span> {formMode === 'create' ? 'Creating...' : 'Saving...'}
                   </>
                 ) : (
-                  'Share Concept Note'
+                  formMode === 'create' ? 'Share Concept Note' : 'Save Concept Note'
                 )}
               </button>
             </form>

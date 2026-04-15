@@ -92,6 +92,18 @@ def parse_bool_env(name: str, default: bool = False) -> bool:
     return raw_value.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def get_seed_file() -> Optional[Path]:
+    configured_seed = (os.environ.get("YARD_SEED_FILE") or "").strip()
+    if configured_seed:
+        return Path(configured_seed).expanduser()
+
+    private_seed = ROOT_DIR / "seed_data.private.json"
+    if private_seed.exists():
+        return private_seed
+
+    return None
+
+
 def get_explicit_frontend_origins() -> List[str]:
     return [origin.rstrip("/") for origin in ALLOWED_ORIGINS if origin and origin != "*"]
 
@@ -1009,21 +1021,14 @@ def can_edit_project(user: Dict[str, Any], project: Dict[str, Any], linked_perso
 
 
 def can_create_project(user: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> bool:
-    return is_admin(user) or is_programme_manager(linked_person)
+    del linked_person
+    return is_admin(user)
 
 
 def is_project_member(project: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> bool:
     if linked_person is None:
         return False
     return linked_person.get("id") in get_project_member_ids(project)
-
-
-def is_programme_manager(linked_person: Optional[Dict[str, Any]]) -> bool:
-    if linked_person is None:
-        return False
-    role = linked_person.get("role")
-    title = (linked_person.get("title") or "").strip().lower()
-    return role in {"staff", "coordinator", "management"} and "programme manager" in title
 
 
 VALID_FEEDBACK_AUDIENCES = {"lead", "team", "review"}
@@ -1046,10 +1051,13 @@ def normalize_feedback_include_reviewers(
 
 
 def can_view_feedback_entry(
+    user: Dict[str, Any],
     project: Dict[str, Any],
     linked_person: Optional[Dict[str, Any]],
     feedback_entry: Dict[str, Any],
 ) -> bool:
+    if is_admin(user):
+        return True
     if linked_person is None:
         return False
 
@@ -1062,7 +1070,7 @@ def can_view_feedback_entry(
         feedback_entry.get("audience"),
         feedback_entry.get("includeReviewers"),
     )
-    if include_reviewers and (linked_person.get("role") == "pi" or is_programme_manager(linked_person)):
+    if include_reviewers and can_access_review_surface(user, linked_person):
         return True
     if audience == "lead":
         return linked_person.get("id") == get_primary_project_lead_id(project)
@@ -1071,12 +1079,13 @@ def can_view_feedback_entry(
 
 def redact_project_feedback_for_viewer(
     project: Dict[str, Any],
+    user: Dict[str, Any],
     linked_person: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     visible_feedback = [
         dict(entry)
         for entry in (project.get("feedback") or [])
-        if can_view_feedback_entry(project, linked_person, entry)
+        if can_view_feedback_entry(user, project, linked_person, entry)
     ]
     project_copy = dict(project)
     project_copy["feedback"] = visible_feedback
@@ -1088,13 +1097,11 @@ def can_add_project_feedback(
     project: Dict[str, Any],
     linked_person: Optional[Dict[str, Any]],
 ) -> bool:
-    """Any PI can add feedback to a project team, except the primary lead of that project; the programme manager can also add feedback."""
-    if is_programme_manager(linked_person):
-        return True
+    """Users with review access can add feedback unless they are the primary project lead."""
+    if not can_access_review_surface(user, linked_person):
+        return False
     if linked_person is None:
-        return False
-    if linked_person.get("role") != "pi":
-        return False
+        return True
     return linked_person.get("id") != get_primary_project_lead_id(project)
 
 
@@ -1104,11 +1111,13 @@ def can_edit_feedback_entry(
     linked_person: Optional[Dict[str, Any]],
     feedback_entry: Dict[str, Any],
 ) -> bool:
-    if is_programme_manager(linked_person):
+    if is_admin(user):
         return True
-    if not can_add_project_feedback(user, project, linked_person):
+    if linked_person is None:
         return False
-    return feedback_entry.get("author") == linked_person.get("name")
+    if feedback_entry.get("author") != linked_person.get("name"):
+        return False
+    return can_add_project_feedback(user, project, linked_person)
 
 
 def can_access_review_surface(user: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> bool:
@@ -1593,12 +1602,16 @@ def compute_concept_note_active_until(created_at: str, days: int = CONCEPT_NOTE_
     return _format_day(_parse_day(created_at) + timedelta(days=days))
 
 
+def is_concept_note_progressed(note: Dict[str, Any]) -> bool:
+    return bool(note.get("progressSignals") or [])
+
+
 def is_concept_note_active(note: Dict[str, Any], reference_day: Optional[str] = None) -> bool:
     active_until = note.get("activeUntil")
     if not active_until:
         return False
     comparison_day = reference_day or utc_now().strftime("%Y-%m-%d")
-    return _parse_day(active_until) >= _parse_day(comparison_day)
+    return _parse_day(active_until) >= _parse_day(comparison_day) and not is_concept_note_progressed(note)
 
 
 def get_concept_note_actor_id(user: Dict[str, Any]) -> str:
@@ -1609,6 +1622,86 @@ def get_concept_note_actor_id(user: Dict[str, Any]) -> str:
         or user.get("email")
         or "system"
     )
+
+
+def get_concept_note_actor_ids(
+    user: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    values = [
+        linked_person.get("id") if linked_person else None,
+        user.get("personId"),
+        user.get("person_id"),
+        user.get("id"),
+        user.get("email"),
+    ]
+    actor_ids: List[str] = []
+    for value in values:
+        cleaned = (value or "").strip()
+        if cleaned and cleaned not in actor_ids:
+            actor_ids.append(cleaned)
+    return actor_ids
+
+
+def can_create_concept_note(linked_person: Optional[Dict[str, Any]]) -> bool:
+    return linked_person is not None
+
+
+def can_edit_concept_note_content(
+    user: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]],
+    note: Dict[str, Any],
+) -> bool:
+    if is_admin(user):
+        return True
+    if linked_person is None:
+        return False
+
+    actor_ids = set(get_concept_note_actor_ids(user, linked_person))
+    contributors = {
+        (contributor_id or "").strip()
+        for contributor_id in (note.get("contributors") or [])
+        if (contributor_id or "").strip()
+    }
+    created_by = (note.get("createdBy") or "").strip()
+
+    if created_by and created_by in actor_ids:
+        return True
+    return bool(actor_ids & contributors)
+
+
+def can_manage_concept_note_contributors(
+    user: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]],
+    note: Dict[str, Any],
+) -> bool:
+    if is_admin(user):
+        return True
+    if linked_person is None:
+        return False
+
+    actor_ids = set(get_concept_note_actor_ids(user, linked_person))
+    created_by = (note.get("createdBy") or "").strip()
+    return bool(created_by and created_by in actor_ids)
+
+
+def serialize_concept_note_for_user(
+    note: Dict[str, Any],
+    user: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    serialized = clone_document(note)
+    if is_concept_note_progressed(note):
+        serialized["frontstageState"] = "progressed"
+    elif is_concept_note_active(note):
+        serialized["frontstageState"] = "active"
+    else:
+        serialized["frontstageState"] = "all"
+    if not can_access_review_surface(user, linked_person):
+        serialized.pop("activeUntil", None)
+    if not is_admin(user):
+        serialized.pop("lastActiveExtension", None)
+    return serialized
 
 
 def build_concept_note_activity_author(note: Dict[str, Any], people_by_id: Dict[str, str]) -> str:
@@ -2449,8 +2542,8 @@ async def get_institutions() -> List[Dict[str, Any]]:
 
 @api_router.get("/skill-taxonomy")
 async def get_skill_taxonomy() -> Dict[str, Any]:
-    seed_path = ROOT_DIR / "seed_data.json"
-    if seed_path.is_file():
+    seed_path = get_seed_file()
+    if seed_path and seed_path.is_file():
         import json as _json
         with open(seed_path) as f:
             seed = _json.load(f)
@@ -2551,7 +2644,8 @@ async def update_person(
 async def get_projects(user: Optional[Dict[str, Any]] = Depends(get_optional_user)) -> List[Dict[str, Any]]:
     projects = await list_collection("projects", limit=200)
     linked_person = await get_linked_person(user) if user else None
-    return [redact_project_feedback_for_viewer(project, linked_person) for project in projects]
+    viewer = user or {}
+    return [redact_project_feedback_for_viewer(project, viewer, linked_person) for project in projects]
 
 
 @api_router.get("/projects/{project_id}")
@@ -2563,7 +2657,8 @@ async def get_project(
     if not item:
         raise HTTPException(status_code=404, detail="Project not found")
     linked_person = await get_linked_person(user) if user else None
-    return redact_project_feedback_for_viewer(item, linked_person)
+    viewer = user or {}
+    return redact_project_feedback_for_viewer(item, viewer, linked_person)
 
 
 @api_router.post("/projects")
@@ -2573,7 +2668,7 @@ async def create_project(
 ) -> Dict[str, Any]:
     linked = await get_linked_person(user)
     if not can_create_project(user, linked):
-        raise HTTPException(status_code=403, detail="Only the programme manager can create projects")
+        raise HTTPException(status_code=403, detail="Only admins can create projects")
 
     team_fields = build_project_team_fields(data.leadId, data.teamMemberIds)
     if not team_fields["leadId"]:
@@ -2846,7 +2941,7 @@ async def add_project_feedback(
         raise HTTPException(status_code=404, detail="Project not found")
     linked = await get_linked_person(user)
     if not can_add_project_feedback(user, project, linked):
-        raise HTTPException(status_code=403, detail="Only a PI or the programme manager can add feedback")
+        raise HTTPException(status_code=403, detail="Only users with review access who are not the project lead can add feedback")
     entry_date = data.date or utc_now().strftime("%Y-%m-%d")
     feedback_doc = {
         "title": data.title,
@@ -2982,7 +3077,7 @@ async def edit_project_feedback(
     if entry_index < 0 or entry_index >= len(feedback):
         raise HTTPException(status_code=404, detail="Feedback entry not found")
     if not can_edit_feedback_entry(user, project, linked, feedback[entry_index]):
-        raise HTTPException(status_code=403, detail="Only the feedback author or the programme manager can edit")
+        raise HTTPException(status_code=403, detail="Only the feedback author or an admin can edit")
     if data.title is not None:
         feedback[entry_index]["title"] = data.title
     if data.content is not None:
@@ -3209,8 +3304,12 @@ async def reopen_milestone(
 
 
 @api_router.get("/conceptnotes")
-async def get_concept_notes() -> List[Dict[str, Any]]:
-    return await list_collection("conceptnotes", limit=200)
+async def get_concept_notes(
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> List[Dict[str, Any]]:
+    linked = await get_linked_person(user)
+    concept_notes = await list_collection("conceptnotes", limit=200)
+    return [serialize_concept_note_for_user(note, user, linked) for note in concept_notes]
 
 
 @api_router.post("/conceptnotes")
@@ -3218,7 +3317,13 @@ async def create_concept_note(
     data: ConceptNoteCreate,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
+    linked = await get_linked_person(user)
+    if not can_create_concept_note(linked):
+        raise HTTPException(status_code=403, detail="Only signed-in programme members with a profile can create concept notes")
+
     doc = data.model_dump()
+    if linked["id"] not in doc.get("contributors", []):
+        raise HTTPException(status_code=422, detail="Concept note contributors must include the signed-in user")
     for contributor_id in doc.get("contributors", []):
         person = await get_by_field("people", "id", contributor_id)
         if not person:
@@ -3230,14 +3335,14 @@ async def create_concept_note(
 
     created_at = utc_now().strftime("%Y-%m-%d")
     doc["id"] = f"cn{uuid4().hex}"
-    doc["createdBy"] = get_concept_note_actor_id(user)
+    doc["createdBy"] = linked["id"]
     doc["createdAt"] = created_at
     doc["updatedAt"] = created_at
     doc["activeUntil"] = compute_concept_note_active_until(created_at)
     doc["progressSignals"] = []
     doc["relatedConceptNoteIds"] = []
     await insert_one("conceptnotes", doc)
-    return doc
+    return serialize_concept_note_for_user(doc, user, linked)
 
 
 @api_router.put("/conceptnotes/{note_id}")
@@ -3250,19 +3355,35 @@ async def update_concept_note(
     if not existing:
         raise HTTPException(status_code=404, detail="Concept note not found")
 
+    linked = await get_linked_person(user)
     update_payload = data.model_dump(exclude_none=True)
     if not update_payload:
         raise HTTPException(status_code=400, detail="No valid fields to update")
 
-    admin_only_fields = {"activeUntil", "progressSignals", "relatedConceptNoteIds"}
+    admin_only_fields = {"activeUntil", "progressSignals", "relatedConceptNoteIds", "relatedProjects"}
     if any(field_name in update_payload for field_name in admin_only_fields) and not is_admin(user):
         raise HTTPException(status_code=403, detail="Only admins can update concept note stewardship")
+
+    ordinary_content_fields = {
+        "title",
+        "rationale",
+        "relevance",
+        "preliminaryInsights",
+        "nextSteps",
+    }
+    if any(field_name in update_payload for field_name in ordinary_content_fields) and not can_edit_concept_note_content(user, linked, existing):
+        raise HTTPException(status_code=403, detail="Only concept note contributors or admins can edit concept note content")
+
+    if "contributors" in update_payload and not can_manage_concept_note_contributors(user, linked, existing):
+        raise HTTPException(status_code=403, detail="Only the concept note creator or admin can update contributors")
 
     if "contributors" in update_payload:
         for contributor_id in update_payload["contributors"]:
             person = await get_by_field("people", "id", contributor_id)
             if not person:
                 raise HTTPException(status_code=404, detail=f"Contributor not found: {contributor_id}")
+        if not is_admin(user) and linked and linked["id"] not in update_payload["contributors"]:
+            raise HTTPException(status_code=422, detail="Concept note contributors must include the signed-in user")
 
     if "relatedProjects" in update_payload:
         missing_projects = await ensure_projects_exist(update_payload["relatedProjects"])
@@ -3304,7 +3425,7 @@ async def update_concept_note(
         update_payload["updatedAt"] = utc_now().strftime("%Y-%m-%d")
 
     updated = await update_fields("conceptnotes", "id", note_id, update_payload)
-    return updated
+    return serialize_concept_note_for_user(updated, user, linked)
 
 
 @api_router.post("/conceptnotes/{note_id}/extend-active")
@@ -3338,7 +3459,8 @@ async def extend_concept_note_active_window(
             "lastActiveExtension": extension_record,
         },
     )
-    return updated
+    linked = await get_linked_person(user)
+    return serialize_concept_note_for_user(updated, user, linked)
 
 
 @api_router.post("/conceptnotes/{note_id}/undo-active-extension")
@@ -3364,7 +3486,8 @@ async def undo_concept_note_active_extension(
         {"activeUntil": previous},
         unset_fields=["lastActiveExtension"],
     )
-    return updated
+    linked = await get_linked_person(user)
+    return serialize_concept_note_for_user(updated, user, linked)
 
 
 @api_router.get("/dashboard/stats")
@@ -3378,7 +3501,11 @@ async def get_dashboard_stats() -> Dict[str, int]:
     projects = await list_collection("projects", limit=200)
     challenges = []
     for project in projects:
-        challenges.extend(project.get("currentChallenges", []))
+        challenges.extend(
+            challenge
+            for challenge in (project.get("currentChallenges") or [])
+            if is_entry_surfaced(challenge)
+        )
     milestones_due = sum(
         1 for milestone in milestones if compute_milestone_status(milestone) in ("approaching", "overdue")
     )
@@ -3501,9 +3628,14 @@ async def seed_database() -> None:
         )
         logger.info("Admin password updated")
 
-    seed_file = ROOT_DIR / "seed_data.json"
+    seed_file = get_seed_file()
+    if seed_file is None:
+        logger.info("No seed file configured; skipping data seed")
+        await ensure_indexes()
+        return
+
     if not seed_file.exists():
-        logger.warning("seed_data.json not found, skipping data seed")
+        logger.warning("Configured seed file %s not found, skipping data seed", seed_file)
         await ensure_indexes()
         return
 

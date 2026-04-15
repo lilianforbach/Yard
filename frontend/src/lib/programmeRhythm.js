@@ -33,6 +33,13 @@ export const PROGRAMME_RHYTHM = [
     note: 'The broader management body, with one PI from each group, that reviews programme-wide progress, discusses emerging challenges, and makes collective decisions.',
   },
   {
+    id: 'specialist-reviews',
+    title: 'RRI, EDI, and Exploitation committees',
+    cadence: 'Quarterly',
+    kind: 'specialist',
+    note: 'Dedicated meetings and working groups on responsible research practice, equality and inclusion, and the translation and exploitation of programme outputs.',
+  },
+  {
     id: 'opcom',
     title: 'Operations Committee',
     cadence: 'Monthly',
@@ -60,13 +67,6 @@ export const PROGRAMME_RHYTHM = [
     cadence: 'Annual',
     kind: 'external',
     note: 'An independent panel of external advisors who review the programme\'s direction, outputs, and impact. This is a distinct annual review moment within the same wider annual cycle as the Annual Event.',
-  },
-  {
-    id: 'specialist-reviews',
-    title: 'RRI, EDI, and Exploitation',
-    cadence: 'Twice yearly',
-    kind: 'specialist',
-    note: 'Dedicated meetings and working groups on responsible research practice, equality and inclusion, and the translation and exploitation of programme outputs.',
   },
 ];
 

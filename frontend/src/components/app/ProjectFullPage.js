@@ -259,7 +259,7 @@ function FeedbackAudienceControls({
         disabled={disabled}
         aria-pressed={includeReviewers}
       >
-        PIs and Reviewers
+        Review access
       </button>
     </div>
   );
@@ -1328,7 +1328,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
               <div className="pf-section-header">
                 <div className="pf-section-heading-stack">
                   <h3>Feedback</h3>
-                  <p className="pf-section-note">Choose a base audience, then optionally include PIs and Reviewers.</p>
+                  <p className="pf-section-note">Choose a base audience, then optionally include Review access.</p>
                 </div>
                 {canAddFeedback && (
                   <div className="pf-section-actions">
@@ -1501,7 +1501,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
       {showProgressForm && (
         <WritingModal
           title={`Add ${showProgressForm === 'feedback' ? 'Feedback' : 'Update'}`}
-          subtitle={showProgressForm === 'feedback' ? 'Choose a base audience, then optionally include PIs and Reviewers.' : 'Record a project update that others can refer back to later. Save quietly to keep it on the project page, or Publish to bring it back into shared programme attention.'}
+          subtitle={showProgressForm === 'feedback' ? 'Choose a base audience, then optionally include Review access.' : 'Record a project update that others can refer back to later. Save quietly to keep it on the project page, or Publish to bring it back into shared programme attention.'}
           onClose={dismissProgressComposer}
         >
           {progressFormError && <div className="form-error-box">{progressFormError}</div>}
@@ -1594,7 +1594,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
         <WritingModal
           title={`Edit ${editingEntry.type === 'feedback' ? 'Feedback' : 'Update'}`}
           subtitle={editingEntry.type === 'feedback'
-            ? 'Adjust the base audience and decide whether to include PIs and Reviewers.'
+            ? 'Adjust the base audience and decide whether to include Review access.'
             : 'Use Save quietly for wording fixes and Publish when the revised entry should resurface in shared programme attention.'}
           onClose={() => setEditingEntry(null)}
         >

@@ -35,9 +35,7 @@ export function formatDaysAgo(days) {
 }
 
 export function canAccessMaintenance(permissions, linkedPerson) {
-  if (permissions?.isAdmin) return true;
-  if (!linkedPerson) return false;
-  return ['staff', 'coordinator', 'management'].includes(linkedPerson.role);
+  return Boolean(permissions?.isAdmin);
 }
 
 export function getMissingProfileFields(person) {

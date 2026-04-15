@@ -59,6 +59,8 @@ Prefer squash merges to keep history readable.
 
 If you change the demo content, update:
 
-- `backend/seed_data.json`
+- `backend/seed_data.private.json`
+
+If you want Yard to use a different private demo file at runtime, point `YARD_SEED_FILE` at it.
 
 If you add new persisted fields, make sure the backend startup path still handles existing records safely.

@@ -1,0 +1,306 @@
+{
+  "institutions": [
+    {
+      "id": "thornbridge",
+      "name": "University of Thornbridge",
+      "color": "#8B2252"
+    },
+    {
+      "id": "lakemere",
+      "name": "Lakemere Institute of Technology",
+      "color": "#1B6B4A"
+    },
+    {
+      "id": "aldhelm",
+      "name": "St. Aldhelm's University",
+      "color": "#2E5A88"
+    }
+  ],
+  "people": [
+    {
+      "id": "priya",
+      "name": "Dr. Priya Ramanathan",
+      "role": "postdoc",
+      "institution": "lakemere",
+      "title": "Postdoctoral Fellow",
+      "email": "p.ramanathan@lakemere.ac.uk",
+      "researchDescription": "Topological approaches to flavour perception.",
+      "skills": [
+        "topological data analysis"
+      ],
+      "bio": "Researcher working on flavour modelling.",
+      "links": [],
+      "website": "",
+      "github": "",
+      "substack": "",
+      "orcid": "",
+      "equipment": [
+        {
+          "name": "Portable sensory panel kit",
+          "description": "Seeded equipment record used by migration tests."
+        }
+      ]
+    },
+    {
+      "id": "kwame",
+      "name": "Dr. Kwame Asante",
+      "role": "postdoc",
+      "institution": "lakemere",
+      "title": "Postdoctoral Fellow",
+      "email": "k.asante@lakemere.ac.uk",
+      "researchDescription": "Autonomous cooking systems.",
+      "skills": [
+        "robotics"
+      ],
+      "bio": "Project lead for SousBot.",
+      "links": [],
+      "website": "",
+      "github": "",
+      "substack": "",
+      "orcid": "",
+      "equipment": []
+    },
+    {
+      "id": "aisha",
+      "name": "Aisha Bakari",
+      "role": "phd",
+      "institution": "lakemere",
+      "title": "DPhil Student",
+      "email": "a.bakari@lakemere.ac.uk",
+      "researchDescription": "Cooking-interface safety and validation.",
+      "skills": [
+        "sensor calibration"
+      ],
+      "bio": "Project contributor on SousBot.",
+      "links": [],
+      "website": "",
+      "github": "",
+      "substack": "",
+      "orcid": "",
+      "equipment": []
+    },
+    {
+      "id": "kenji",
+      "name": "Prof. Kenji Yamamoto",
+      "role": "pi",
+      "institution": "lakemere",
+      "title": "Professor",
+      "email": "k.yamamoto@lakemere.ac.uk",
+      "researchDescription": "Programme PI for robotic gastronomy.",
+      "skills": [
+        "robotics"
+      ],
+      "bio": "Principal investigator.",
+      "links": [],
+      "website": "",
+      "github": "",
+      "substack": "",
+      "orcid": "",
+      "equipment": []
+    },
+    {
+      "id": "amara",
+      "name": "Prof. Amara Osei",
+      "role": "pi",
+      "institution": "thornbridge",
+      "title": "Professor",
+      "email": "a.osei@thornbridge.ac.uk",
+      "researchDescription": "Programme PI for fermentation systems.",
+      "skills": [
+        "fermentation"
+      ],
+      "bio": "Principal investigator.",
+      "links": [],
+      "website": "",
+      "github": "",
+      "substack": "",
+      "orcid": "",
+      "equipment": []
+    },
+    {
+      "id": "nkechi",
+      "name": "Nkechi Adeyemi",
+      "role": "staff",
+      "institution": "thornbridge",
+      "title": "Programme Manager",
+      "email": "n.adeyemi@thornbridge.ac.uk",
+      "researchDescription": "Programme operations and coordination.",
+      "skills": [
+        "programme coordination"
+      ],
+      "bio": "Programme team member.",
+      "links": [],
+      "website": "",
+      "github": "",
+      "substack": "",
+      "orcid": "",
+      "equipment": []
+    },
+    {
+      "id": "david",
+      "name": "Prof. David Chen",
+      "role": "pi",
+      "institution": "aldhelm",
+      "title": "Professor",
+      "email": "d.chen@aldhelm.ac.uk",
+      "researchDescription": "Programme PI for data-intensive food science.",
+      "skills": [
+        "computational modelling"
+      ],
+      "bio": "Principal investigator.",
+      "links": [],
+      "website": "",
+      "github": "",
+      "substack": "",
+      "orcid": "",
+      "equipment": []
+    },
+    {
+      "id": "tomas",
+      "name": "Dr. Tomás Eriksson",
+      "role": "postdoc",
+      "institution": "thornbridge",
+      "title": "Postdoctoral Fellow",
+      "email": "t.eriksson@thornbridge.ac.uk",
+      "researchDescription": "Computational recipe modelling.",
+      "skills": [
+        "graph learning"
+      ],
+      "bio": "Researcher on recipe reasoning.",
+      "links": [],
+      "website": "",
+      "github": "",
+      "substack": "",
+      "orcid": "",
+      "equipment": []
+    }
+  ],
+  "projects": [
+    {
+      "id": "sousbot",
+      "title": "SousBot",
+      "institution": "lakemere",
+      "type": "individual",
+      "description": "Closed-loop sensory feedback in autonomous cooking.",
+      "abstract": "",
+      "aims": "",
+      "status": "",
+      "leadId": "kwame",
+      "teamMemberIds": [
+        "kwame",
+        "aisha",
+        "kenji"
+      ],
+      "lead": "kwame",
+      "leads": [
+        "kwame",
+        "aisha",
+        "kenji"
+      ],
+      "slidesUrl": "",
+      "svgUrls": [],
+      "updates": [],
+      "feedback": [],
+      "currentChallenges": [],
+      "resolvedChallenges": [],
+      "keyPublications": [],
+      "lastModified": ""
+    },
+    {
+      "id": "recipegraph",
+      "title": "RecipeGraph",
+      "institution": "thornbridge",
+      "type": "individual",
+      "description": "Knowledge-graph reasoning over recipes and flavour structure.",
+      "abstract": "",
+      "aims": "",
+      "status": "",
+      "leadId": "tomas",
+      "teamMemberIds": [
+        "tomas",
+        "priya"
+      ],
+      "lead": "tomas",
+      "leads": [
+        "tomas",
+        "priya"
+      ],
+      "slidesUrl": "https://example.org/recipegraph-slides.pdf",
+      "svgUrls": [],
+      "updates": [],
+      "feedback": [],
+      "currentChallenges": [],
+      "resolvedChallenges": [],
+      "keyPublications": [],
+      "lastModified": ""
+    }
+  ],
+  "publications": [],
+  "events": [],
+  "milestones": [
+    {
+      "id": "mseed1",
+      "project": "recipegraph",
+      "title": "Seed milestone",
+      "dueDate": "2026-06-30",
+      "type": "research",
+      "status": "on-track"
+    }
+  ],
+  "conceptNotes": [
+    {
+      "id": "cn1",
+      "title": "Taste Perception Under Microgravity",
+      "contributors": [
+        "priya"
+      ],
+      "rationale": "A seeded concept note for backend tests.",
+      "relevance": "Supports flavour perception work.",
+      "preliminaryInsights": "Microgravity changes sensory processing.",
+      "nextSteps": "Design a pilot study.",
+      "relatedProjects": [
+        "recipegraph"
+      ],
+      "createdBy": "priya",
+      "createdAt": "2026-03-15",
+      "updatedAt": "2026-03-15",
+      "activeUntil": "2026-05-10",
+      "progressSignals": [],
+      "relatedConceptNoteIds": [
+        "cn2"
+      ]
+    },
+    {
+      "id": "cn2",
+      "title": "Adversarial Recipes",
+      "contributors": [
+        "tomas"
+      ],
+      "rationale": "A second seeded concept note for relation tests.",
+      "relevance": "Explores generative recipe reasoning.",
+      "preliminaryInsights": "Early latent-space separation looks promising.",
+      "nextSteps": "Expand the training set.",
+      "relatedProjects": [
+        "sousbot"
+      ],
+      "createdBy": "tomas",
+      "createdAt": "2026-03-18",
+      "updatedAt": "2026-03-18",
+      "activeUntil": "2026-05-13",
+      "progressSignals": [],
+      "relatedConceptNoteIds": []
+    }
+  ],
+  "skillTaxonomy": {
+    "analysis": [
+      "topological data analysis",
+      "computational modelling",
+      "graph learning"
+    ],
+    "delivery": [
+      "programme coordination",
+      "sensor calibration",
+      "robotics"
+    ]
+  }
+}
