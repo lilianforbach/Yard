@@ -13,7 +13,7 @@ const PROGRAMME_TABS = [
 const YARD_GUIDE_MARKDOWN = `
 # Yard Guide
 
-_3 min read_
+_5 min read_
 
 ## What Yard is
 
@@ -29,15 +29,13 @@ The aim is not to learn every feature or read every page closely. It is to get a
 
 ## How Yard is meant to work
 
-Yard is built to keep work visible across a programme without becoming a heavy process.
+Yard helps people stay aware of the programme beyond the projects they know best, and see where their judgement, experience, or connections may be useful -- whether that contribution happens in Yard, in meetings, or through direct conversations.
 
-Project leads use Yard to keep the direction and current state of a project visible over time. They decide what is worth recording, how often to update, which milestones matter, and which challenges to signal. A project lead is the person carrying the project forward day to day. It is a working role, not a marker of seniority.
+Project leads use Yard to keep the direction and current state of a project visible over time. They decide what is worth recording, how often to **update**, which **milestones** matter, and which **challenges** to signal. A project lead is the person carrying the project forward day to day.
 
 In that context, _Save quietly_ and _Publish_ are meaningful choices. _Save quietly_ keeps something on the project page as part of the ongoing record. _Publish_ gives it wider visibility in Yard, including on the Dashboard, when shared awareness, timely review, or broader expertise would help move the work forward.
 
-Feedback works differently. It stays close to the project page and the work it relates to, rather than entering that wider layer of visibility.
-
-For PIs and others in review roles, Yard offers a way to stay aware of the programme beyond the projects they know best, and to see where their judgement, experience, or connections may be useful -- whether that contribution happens in Yard, in meetings, or through direct conversations.
+For PIs and programme team members, it helps them scan the wider programme quickly, see where their perspective may be useful, and leave feedback in context. That feedback stays close to the project page and the work it relates to, rather than being pushed onto shared programme pages.
 
 The programme generates many early ideas. Concept notes give them a visible place so they can create connections, inform discussion, link into project work, and be taken forward.
 
@@ -45,18 +43,7 @@ The programme generates many early ideas. Concept notes give them a visible plac
 
 Different people will naturally look for different things.
 
-### If you are a PI
-
-A good starting path is:
-
-- Open _Dashboard_ to get a quick sense of what is visible across the programme.
-- Open _Review_ to see where projects may benefit from attention, follow-up, or wider support.
-- Open a few projects outside your own immediate area and look at how updates, milestones, challenges, and feedback sit together on the page.
-- Visit _People_ and _Events_ to see how expertise and programme activity are surfaced across the app.
-
-As you explore, notice whether Yard helps you form a clear picture quickly, and whether it shows you where your perspective may be useful.
-
-### If you are a researcher or project lead
+### If you are a postdoc or PhD student
 
 A good starting path is:
 
@@ -67,14 +54,25 @@ A good starting path is:
 
 As you explore, notice whether the project page feels like a helpful working surface, and whether it makes the shape and current state of the work easier to understand.
 
+### If you are a PI or a programme team member
+
+A good starting path is:
+
+- Open _Dashboard_ to get a quick sense of what is visible across the programme.
+- Open _Review_ to see where projects may benefit from attention, follow-up, or wider support.
+- Open a few projects outside your own immediate area and look at how updates, milestones, challenges, and feedback sit together on the page.
+- Visit _People_ and _Events_ to see how expertise and programme activity are surfaced across the app.
+
+As you explore, notice whether Yard helps you form a clear picture quickly, and whether it shows you where your perspective may be useful.
+
 ## What to look for
 
 As you move through the demo, a few questions may be worth keeping in mind:
 
-- Does a small amount of upkeep create a clearer picture of the programme than meetings and scattered updates alone?
+- Does a small amount of upkeep create a clearer picture of the programme than meetings and updates alone?
 - Do project pages make it easier to understand both the science and the current state of a project?
 - Do milestones, challenges, and feedback feel like useful signals in context?
-- Do concept notes help early ideas stay visible at the right stage?
+- Do concept notes help early ideas stay visible?
 - Does Yard help the programme make better use of the expertise it already has?
 - Does the amount of platform use feel proportionate to the value of the shared picture it creates?
 
@@ -84,8 +82,8 @@ This demo includes Yard's main shared surfaces: _Dashboard_, _People_, _Projects
 
 What you can change depends on the persona you are using:
 
-- PI accounts are mainly for exploring the wider programme, using _Review_, and contributing feedback where useful.
-- Researcher and project-lead accounts are for exploring the wider programme and, where relevant, maintaining the records of the projects they lead.
+- PI and programme team accounts are mainly for exploring the wider programme, using _Review_, and contributing feedback where useful.
+- Postdoc and PhD accounts are for exploring the wider programme and, where relevant, maintaining the records of the projects they are carrying forward day to day.
 
 ## After your tour
 

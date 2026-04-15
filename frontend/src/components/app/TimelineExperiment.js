@@ -288,10 +288,7 @@ export default function TimelineExperiment({
   const pointerFrameRef = useRef(null);
   const queuedPointerRef = useRef(null);
 
-  const selectedActiveRowId = timelineRows.some((row) => row.projectId === selectedProjectId)
-    ? selectedProjectId
-    : null;
-  const activeRowId = pinnedRowId || hoveredRowId || selectedActiveRowId;
+  const activeRowId = pinnedRowId || hoveredRowId;
 
   const activeRow = useMemo(
     () => timelineRows.find((row) => row.projectId === activeRowId) || null,
