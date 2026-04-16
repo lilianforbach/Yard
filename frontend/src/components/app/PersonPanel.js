@@ -130,6 +130,9 @@ export default function PersonPanel({ personId, onClose, onProjectClick }) {
   const header = (
     <>
       <h2>{person.name}</h2>
+      {person.title?.trim() && (
+        <div className="panel-title">{person.title}</div>
+      )}
       <div className="panel-meta">
         <span className="inst-badge" style={{ color: inst?.color }}>{inst?.name}</span>
       </div>

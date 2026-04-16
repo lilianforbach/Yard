@@ -1254,7 +1254,6 @@ class PersonUpdate(BaseModel):
     researchDescription: Optional[str] = None
     skills: Optional[List[str]] = None
     email: Optional[str] = None
-    bio: Optional[str] = None
     links: Optional[List[Dict[str, Any]]] = None
     website: Optional[str] = None
     github: Optional[str] = None
@@ -1293,7 +1292,6 @@ class PersonUpdate(BaseModel):
             self.researchDescription is not None,
             self.skills is not None,
             self.email is not None,
-            self.bio is not None,
             self.links is not None,
             self.website is not None,
             self.github is not None,
@@ -2552,7 +2550,6 @@ async def admin_onboard_member(
             "email": normalized_email,
             "researchDescription": (data.researchDescription or "").strip(),
             "skills": data.skills or [],
-            "bio": "",
             "links": data.links or [],
             "website": (data.website or "").strip(),
             "github": (data.github or "").strip(),
@@ -2695,7 +2692,6 @@ async def create_person(
         "email": normalized_email,
         "researchDescription": data.researchDescription or "",
         "skills": data.skills or [],
-        "bio": "",
         "links": data.links or [],
         "website": data.website or "",
         "github": data.github or "",

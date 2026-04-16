@@ -388,7 +388,6 @@ export default function PersonProfileModal({
                     type="text"
                     value={draft.title}
                     onChange={(e) => setDraft((current) => ({ ...current, title: e.target.value }))}
-                    placeholder="e.g. RETO or Programme Manager"
                     disabled={loading}
                   />
                 </div>
