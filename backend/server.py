@@ -408,6 +408,63 @@ def parse_optional_datetime(value: Optional[str]) -> Optional[datetime]:
     return parsed
 
 
+LEGACY_PERSON_LINK_FIELDS = ("website", "github", "substack", "orcid")
+
+
+def normalize_legacy_person_link_value(link_type: str, url: str) -> str:
+    cleaned = (url or "").strip()
+    if not cleaned:
+        return ""
+    if link_type == "orcid":
+        return re.sub(r"^https?://orcid\.org/", "", cleaned, flags=re.IGNORECASE).rstrip("/")
+    return cleaned
+
+
+def get_visible_person_link_types(person: Dict[str, Any]) -> set[str]:
+    links = person.get("links")
+    if isinstance(links, list):
+        link_types = {
+            str(link.get("type") or "").strip()
+            for link in links
+            if isinstance(link, dict) and str(link.get("url") or "").strip()
+        }
+        if link_types:
+            return link_types
+
+    return {
+        field
+        for field in LEGACY_PERSON_LINK_FIELDS
+        if str(person.get(field) or "").strip()
+    }
+
+
+def build_legacy_person_link_mirror_payload(
+    person: Dict[str, Any],
+    links: Optional[List[Dict[str, Any]]],
+) -> Dict[str, str]:
+    next_links = links if isinstance(links, list) else []
+    next_by_type: Dict[str, str] = {}
+
+    for link in next_links:
+        if not isinstance(link, dict):
+            continue
+        link_type = str(link.get("type") or "").strip()
+        link_url = str(link.get("url") or "").strip()
+        if link_type not in LEGACY_PERSON_LINK_FIELDS or not link_url or link_type in next_by_type:
+            continue
+        next_by_type[link_type] = normalize_legacy_person_link_value(link_type, link_url)
+
+    visible_types = get_visible_person_link_types(person)
+    mirror_payload: Dict[str, str] = {}
+    for field in LEGACY_PERSON_LINK_FIELDS:
+        if field in next_by_type:
+            mirror_payload[field] = next_by_type[field]
+        elif field in visible_types:
+            mirror_payload[field] = ""
+
+    return mirror_payload
+
+
 def get_user_token_version(user: Dict[str, Any]) -> int:
     raw_value = user.get("token_version", 0)
     try:
@@ -2643,6 +2700,8 @@ async def update_person(
             if existing_person:
                 raise HTTPException(status_code=400, detail="Email is already used by another profile")
         update_payload["email"] = normalized_email
+    if "links" in update_payload:
+        update_payload.update(build_legacy_person_link_mirror_payload(person, update_payload.get("links")))
     update_payload.pop("publish", None)
     if not update_payload:
         return person

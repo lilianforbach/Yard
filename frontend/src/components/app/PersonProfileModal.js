@@ -3,7 +3,6 @@ import { Plus, X } from 'lucide-react';
 import api from '../../api';
 import { useData } from '../../contexts/DataContext';
 import {
-  normalizeOrcidValue,
   buildPersonLinks,
   getPersonLinkLabel,
   getPersonLinkPlaceholder,
@@ -25,8 +24,6 @@ const ROLE_PILLS = [
   { value: 'programme-team', label: 'Programme Team', roles: ['staff', 'coordinator', 'management'] },
 ];
 const TITLE_DEFAULT_ROLES = new Set(['staff', 'coordinator', 'management']);
-
-const LEGACY_LINK_TYPES = ['website', 'github', 'substack', 'orcid'];
 
 function createEmptyLinkDraft() {
   return {
@@ -66,24 +63,12 @@ function buildPayload(draft, canEditIdentity) {
         .map((link) => [`${link.type}|${link.label}|${link.url}`, link]),
     ).values(),
   );
-  const legacyLinks = {
-    website: '',
-    github: '',
-    substack: '',
-    orcid: '',
-  };
-  links.forEach((link) => {
-    if (LEGACY_LINK_TYPES.includes(link.type) && !legacyLinks[link.type]) {
-      legacyLinks[link.type] = link.type === 'orcid' ? normalizeOrcidValue(link.url) : link.url;
-    }
-  });
 
   const payload = {
     title: draft.title.trim(),
     email: draft.email.trim(),
     researchDescription: draft.researchDescription.trim(),
     links,
-    ...legacyLinks,
     skills: Array.from(new Set((draft.skills || [])
       .map((skill) => skill?.trim())
       .filter(Boolean))),

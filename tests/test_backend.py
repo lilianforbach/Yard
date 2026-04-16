@@ -504,6 +504,50 @@ def test_admin_reset_endpoint_rejects_current_session_account(client):
     assert reset_response.json()["detail"] == "Use the password change flow for your current account"
 
 
+def test_profile_link_updates_preserve_hidden_legacy_link_fields(client):
+    login(client)
+
+    created_person = client.post(
+        "/api/people",
+        json={
+            "name": "Dr. Legacy Links",
+            "role": "postdoc",
+            "institution": "lakemere",
+            "email": "legacy.links@lakemere.ac.uk",
+            "links": [{"type": "website", "url": "https://visible.example.com"}],
+            "orcid": "0000-0001-2345-6789",
+        },
+    )
+    assert created_person.status_code == 200
+    person = created_person.json()
+    assert person["links"] == [{"type": "website", "url": "https://visible.example.com"}]
+    assert person["orcid"] == "0000-0001-2345-6789"
+
+    updated_person = client.put(
+        f"/api/people/{person['id']}",
+        json={
+            "title": "Updated title",
+            "links": [{"type": "website", "url": "https://visible.example.com"}],
+        },
+    )
+    assert updated_person.status_code == 200
+    updated_payload = updated_person.json()
+    assert updated_payload["website"] == "https://visible.example.com"
+    assert updated_payload["orcid"] == "0000-0001-2345-6789"
+
+    removed_link = client.put(
+        f"/api/people/{person['id']}",
+        json={
+            "links": [],
+        },
+    )
+    assert removed_link.status_code == 200
+    removed_payload = removed_link.json()
+    assert removed_payload["links"] == []
+    assert removed_payload["website"] == ""
+    assert removed_payload["orcid"] == "0000-0001-2345-6789"
+
+
 def test_write_endpoints_require_auth_and_validate_input(client):
     unauthenticated = client.post(
         "/api/milestones",
