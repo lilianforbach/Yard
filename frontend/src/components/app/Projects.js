@@ -196,36 +196,13 @@ function getChallengePriority(severity) {
   }
 }
 
-function summarizeChallengeText(text, maxLength = 108) {
-  const normalized = (text || '').replace(/\s+/g, ' ').trim();
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
-}
-
 function getChallengeColumn(challengeSnapshot) {
-  const { items = [], primarySeverity = null } = challengeSnapshot || {};
-
-  if (!items.length) {
-    return {
-      value: 'No active challenges',
-      note: '',
-      tone: 'neutral',
-    };
-  }
-
-  const strongestChallenge = [...items].sort((a, b) => {
+  const { items = [] } = challengeSnapshot || {};
+  return [...items].sort((a, b) => {
     const severityDiff = getChallengePriority(a.severity) - getChallengePriority(b.severity);
     if (severityDiff !== 0) return severityDiff;
     return 0;
-  })[0];
-  const severityLabel = getChallengeSeverityLabel(strongestChallenge?.severity);
-  const moreCount = items.length - 1;
-
-  return {
-    value: items.length === 1 ? `${severityLabel} challenge` : `${items.length} active challenges`,
-    note: `${summarizeChallengeText(strongestChallenge?.description || '')}${moreCount > 0 ? ` · +${moreCount} more` : ''}`,
-    tone: primarySeverity === 'blocking' ? 'danger' : primarySeverity === 'slowing' || primarySeverity === 'minor' ? 'warning' : 'neutral',
-  };
+  });
 }
 
 function getReviewSeverityScore(reviewSnapshot) {
@@ -269,6 +246,9 @@ const ACTIVITY_TYPE_LABELS = {
   challenge: 'Challenge',
   'challenge-resolved': 'Resolved',
   'concept-note': 'Concept note',
+  milestone: 'Milestone',
+  publication: 'Publication',
+  event: 'Event',
 };
 
 export default function Projects({
@@ -619,6 +599,7 @@ export default function Projects({
         query,
         item.title,
         item.project,
+        item.context,
         item.author,
         ACTIVITY_TYPE_LABELS[item.type] || getProjectActivityLabel(item.type)
       ))
@@ -822,11 +803,11 @@ export default function Projects({
                   <>
                     <div className="project-review-header" aria-hidden="true">
                       <div className="project-review-header-cell">Project name ({projectIndex.length})</div>
-                      <div className="project-review-header-cell">Challenges</div>
                       <div className="project-review-header-cell">Next milestone</div>
+                      <div className="project-review-header-cell">Challenges</div>
                     </div>
                     {reviewRows.map(({ project, lead, reviewSnapshot, nextMilestone, nextMilestoneLabel, nextMilestoneNote }) => {
-                      const challengeColumn = getChallengeColumn(reviewSnapshot?.challengeSnapshot);
+                      const challengeItems = getChallengeColumn(reviewSnapshot?.challengeSnapshot);
 
                       return (
                         <button
@@ -847,18 +828,39 @@ export default function Projects({
                             </div>
                           </div>
                           <div className="project-review-column">
-                            <span className={`project-review-column-value ${challengeColumn.tone} ${challengeColumn.note ? '' : 'subtle'}`}>{challengeColumn.value}</span>
-                            {challengeColumn.note ? (
-                              <span className="project-review-column-note">{challengeColumn.note}</span>
-                            ) : null}
-                          </div>
-                          <div className="project-review-column">
                             <span className={`project-review-column-value ${nextMilestone ? '' : 'subtle'}`}>
                               {nextMilestone ? nextMilestone.title : nextMilestoneLabel}
                             </span>
                             {nextMilestone ? (
                               <span className="project-review-column-note">{nextMilestoneNote}</span>
                             ) : null}
+                          </div>
+                          <div className="project-review-column project-review-column-challenges">
+                            {challengeItems.length > 0 ? (
+                              <div className="project-review-challenge-list">
+                                {challengeItems.map((challenge, index) => {
+                                  const tone = challenge.severity === 'blocking'
+                                    ? 'danger'
+                                    : challenge.severity === 'slowing' || challenge.severity === 'minor'
+                                      ? 'warning'
+                                      : 'neutral';
+
+                                  return (
+                                    <div
+                                      key={challenge.id || `${project.id}-challenge-${index}`}
+                                      className="project-review-challenge-item"
+                                    >
+                                      <span className={`project-review-challenge-label ${tone}`}>
+                                        {getChallengeSeverityLabel(challenge.severity)} challenge
+                                      </span>
+                                      <span className="project-review-challenge-text">{challenge.description}</span>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <span className="project-review-column-value subtle">No active challenges</span>
+                            )}
                           </div>
                         </button>
                       );
@@ -928,18 +930,25 @@ export default function Projects({
                     {groupedActivity.map((group) => (
                       <div key={group.key} className="dash-feed-month">
                         <div className="dash-feed-month-label">{group.label}</div>
-                        {group.items.map((entry, index) => {
-                          const isClickable = Boolean(entry.projectId) || entry.type === 'concept-note';
+                    {group.items.map((entry, index) => {
                           const activityTypeLabel = ACTIVITY_TYPE_LABELS[entry.type];
                           const handleClick = () => {
                             if (entry.projectId) {
                               onProjectClick(entry.projectId);
                             } else if (entry.type === 'concept-note' && onNavigate) {
                               onNavigate('conceptnotes');
+                            } else if (entry.type === 'event' && entry.eventId && onNavigate) {
+                              onNavigate('events', { event: entry.eventId });
+                            } else if (entry.type === 'publication' && onNavigate) {
+                              onNavigate('publications');
                             }
                           };
+                          const isClickableEntry = Boolean(entry.projectId)
+                            || entry.type === 'concept-note'
+                            || (entry.type === 'event' && entry.eventId)
+                            || entry.type === 'publication';
 
-                          if (isClickable) {
+                          if (isClickableEntry) {
                             return (
                               <button
                                 key={`${group.key}-${index}`}
@@ -958,7 +967,7 @@ export default function Projects({
                                     {entry.title}
                                   </div>
                                   <div className="activity-meta">
-                                    {entry.project && <>{entry.project} &bull; </>}
+                                    {(entry.context || entry.project) && <>{entry.context || entry.project} &bull; </>}
                                     {formatDate(entry.date)}
                                     {entry.author && <> &bull; {entry.author}</>}
                                   </div>
@@ -983,7 +992,7 @@ export default function Projects({
                                   {entry.title}
                                 </div>
                                 <div className="activity-meta">
-                                  {entry.project && <>{entry.project} &bull; </>}
+                                  {(entry.context || entry.project) && <>{entry.context || entry.project} &bull; </>}
                                   {formatDate(entry.date)}
                                   {entry.author && <> &bull; {entry.author}</>}
                                 </div>

@@ -465,6 +465,39 @@ def build_legacy_person_link_mirror_payload(
     return mirror_payload
 
 
+def is_feed_item_visible_by_date(value: Optional[str], now: Optional[datetime] = None) -> bool:
+    """Return True when the feed item date is current/past or cannot be parsed.
+
+    The activity feed is a historical surface, so future-dated items should stay hidden
+    until their month/day has actually arrived. Month-only dates are treated at month
+    precision rather than being expanded to a synthetic day.
+    """
+    if not value:
+        return True
+
+    current = now or datetime.now(timezone.utc)
+    raw = value.strip()
+
+    if re.fullmatch(r"\d{4}-\d{2}", raw):
+        try:
+            parsed = datetime.strptime(raw, "%Y-%m")
+        except ValueError:
+            return True
+        return (parsed.year, parsed.month) <= (current.year, current.month)
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        try:
+            parsed = datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError:
+            return True
+        return parsed.date() <= current.date()
+
+    parsed = parse_optional_datetime(raw)
+    if parsed is None:
+        return True
+    return parsed.date() <= current.date()
+
+
 def get_user_token_version(user: Dict[str, Any]) -> int:
     raw_value = user.get("token_version", 0)
     try:
@@ -3609,70 +3642,126 @@ async def get_dashboard_stats(
 async def get_dashboard_activity(
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> List[Dict[str, Any]]:
-    """Return the full activity feed — updates, challenges, and concept note
-    creation events — sorted newest-first. No cap: the frontend handles
-    pagination / scroll."""
+    """Return the full activity feed — updates, challenges, completed milestones,
+    publications, events, and concept note creation events — sorted newest-first.
+    No cap: the frontend handles pagination / scroll."""
     del user
     projects = await list_collection("projects", limit=200)
     concept_notes = await list_collection("conceptnotes", limit=200)
+    milestones = await list_collection("milestones", limit=500)
+    publications = await list_collection("publications", limit=200)
+    events = await list_collection("events", limit=100)
     people = await list_collection("people", limit=400)
     people_by_id = {person["id"]: person.get("name", person["id"]) for person in people}
+    projects_by_id = {project["id"]: project for project in projects}
     activities: List[Dict[str, Any]] = []
+    current_time = datetime.now(timezone.utc)
 
     for project in projects:
         for update in project.get("updates") or []:
             if not is_entry_surfaced(update):
                 continue
-            activities.append(
-                {
-                    "type": "update",
-                    "project": project["title"],
-                    "projectId": project["id"],
-                    "title": update.get("title", ""),
-                    "date": update.get("lastModified") or update.get("date", ""),
-                    "author": update.get("author", ""),
-                }
-            )
+            item = {
+                "type": "update",
+                "project": project["title"],
+                "context": project["title"],
+                "projectId": project["id"],
+                "title": update.get("title", ""),
+                "date": update.get("lastModified") or update.get("date", ""),
+                "author": update.get("author", ""),
+            }
+            if is_feed_item_visible_by_date(item["date"], current_time):
+                activities.append(item)
         for challenge in project.get("currentChallenges") or []:
             if not is_entry_surfaced(challenge):
                 continue
-            activities.append(
-                {
-                    "type": "challenge",
-                    "project": project["title"],
-                    "projectId": project["id"],
-                    "title": challenge.get("description", "")[:90],
-                    "date": challenge.get("lastModified") or challenge.get("date", ""),
-                    "author": challenge.get("raisedBy", ""),
-                    "severity": challenge.get("severity", ""),
-                }
-            )
+            item = {
+                "type": "challenge",
+                "project": project["title"],
+                "context": project["title"],
+                "projectId": project["id"],
+                "title": challenge.get("description", "")[:90],
+                "date": challenge.get("lastModified") or challenge.get("date", ""),
+                "author": challenge.get("raisedBy", ""),
+                "severity": challenge.get("severity", ""),
+            }
+            if is_feed_item_visible_by_date(item["date"], current_time):
+                activities.append(item)
         for challenge in project.get("resolvedChallenges") or []:
             if not is_entry_surfaced(challenge):
                 continue
-            activities.append(
-                {
-                    "type": "challenge-resolved",
-                    "project": project["title"],
-                    "projectId": project["id"],
-                    "title": challenge.get("description", "")[:90],
-                    "date": challenge.get("resolvedDate") or challenge.get("lastModified") or challenge.get("date", ""),
-                    "author": challenge.get("resolvedBy", ""),
-                    "severity": challenge.get("severity", ""),
-                }
-            )
+            item = {
+                "type": "challenge-resolved",
+                "project": project["title"],
+                "context": project["title"],
+                "projectId": project["id"],
+                "title": challenge.get("description", "")[:90],
+                "date": challenge.get("resolvedDate") or challenge.get("lastModified") or challenge.get("date", ""),
+                "author": challenge.get("resolvedBy", ""),
+                "severity": challenge.get("severity", ""),
+            }
+            if is_feed_item_visible_by_date(item["date"], current_time):
+                activities.append(item)
+
+    for milestone in milestones:
+        if compute_milestone_status(milestone) != "completed":
+            continue
+        project_id = milestone.get("project") or milestone.get("projectId") or ""
+        project = projects_by_id.get(project_id)
+        item = {
+            "type": "milestone",
+            "project": project.get("title", "") if project else "",
+            "context": project.get("title", "") if project else "",
+            "projectId": project_id,
+            "title": milestone.get("title", ""),
+            "date": milestone.get("completedDate") or milestone.get("dueDate", ""),
+            "author": "",
+        }
+        if is_feed_item_visible_by_date(item["date"], current_time):
+            activities.append(item)
+
+    for publication in publications:
+        project_ids = publication.get("projectIds") or ([publication.get("projectId")] if publication.get("projectId") else [])
+        primary_project_id = next((project_id for project_id in project_ids if project_id), "")
+        primary_project = projects_by_id.get(primary_project_id)
+        item = {
+            "type": "publication",
+            "project": primary_project.get("title", "") if primary_project else "",
+            "context": publication.get("venue", ""),
+            "projectId": primary_project_id,
+            "title": publication.get("title", ""),
+            "date": publication.get("date", ""),
+            "author": publication.get("authors", ""),
+        }
+        if is_feed_item_visible_by_date(item["date"], current_time):
+            activities.append(item)
+
+    for event in events:
+        item = {
+            "type": "event",
+            "project": "",
+            "context": event.get("location", ""),
+            "projectId": "",
+            "eventId": event.get("id", ""),
+            "title": event.get("name", ""),
+            "date": event.get("date", ""),
+            "author": "",
+        }
+        if is_feed_item_visible_by_date(item["date"], current_time):
+            activities.append(item)
 
     for note in concept_notes:
-        activities.append(
-            {
-                "type": "concept-note",
-                "project": "",
-                "projectId": "",
-                "title": note.get("title", ""),
-                "date": note.get("createdAt", ""),
-                "author": build_concept_note_activity_author(note, people_by_id),
-            }
-        )
+        item = {
+            "type": "concept-note",
+            "project": "",
+            "context": "",
+            "projectId": "",
+            "title": note.get("title", ""),
+            "date": note.get("createdAt", ""),
+            "author": build_concept_note_activity_author(note, people_by_id),
+        }
+        if is_feed_item_visible_by_date(item["date"], current_time):
+            activities.append(item)
 
     activities.sort(key=lambda item: item.get("date", ""), reverse=True)
     return activities

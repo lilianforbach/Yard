@@ -998,6 +998,9 @@ textarea {
   background: rgba(27, 107, 74, 0.1);
 }
 .activity-type-label[data-type="concept-note"] { color: var(--color-aldhelm); background: rgba(46, 90, 136, 0.08); }
+.activity-type-label[data-type="milestone"] { color: var(--color-aldhelm); background: rgba(46, 90, 136, 0.08); }
+.activity-type-label[data-type="publication"] { color: #7b5ba7; background: rgba(123, 91, 167, 0.1); }
+.activity-type-label[data-type="event"] { color: #8a5a00; background: rgba(203, 140, 54, 0.12); }
 .activity-meta { font-size: 0.75rem; color: var(--color-text-light); }
 
 /* ── Dashboard gallery ── */
@@ -2438,7 +2441,7 @@ textarea.editable-field-input { min-height: 4rem; }
 }
 .project-review-header {
   display: grid;
-  grid-template-columns: minmax(0, 2.4fr) minmax(300px, 1.45fr) minmax(210px, 0.95fr);
+  grid-template-columns: minmax(0, 1.95fr) minmax(220px, 1fr) minmax(280px, 1.45fr);
   gap: 0.9rem;
   padding: 0.8rem 1.1rem;
   position: sticky;
@@ -2471,7 +2474,7 @@ textarea.editable-field-input { min-height: 4rem; }
   border: none;
   background: transparent;
   display: grid;
-  grid-template-columns: minmax(0, 2.4fr) minmax(300px, 1.45fr) minmax(210px, 0.95fr);
+  grid-template-columns: minmax(0, 1.95fr) minmax(220px, 1fr) minmax(280px, 1.45fr);
   gap: 0.9rem;
   text-align: left;
   padding: 0.9rem 1.1rem;
@@ -2538,6 +2541,7 @@ textarea.editable-field-input { min-height: 4rem; }
   flex-direction: column;
   gap: 0.25rem;
   min-width: 0;
+  align-self: start;
 }
 .project-review-column-value {
   font-size: 0.78rem;
@@ -2562,8 +2566,44 @@ textarea.editable-field-input { min-height: 4rem; }
   font-size: 0.74rem;
   color: var(--color-text-light);
   line-height: 1.45;
+}
+.project-review-column-challenges {
+  gap: 0.5rem;
+}
+.project-review-challenge-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+.project-review-challenge-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.16rem;
+}
+.project-review-challenge-item + .project-review-challenge-item {
+  padding-top: 0.55rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
+}
+.project-review-challenge-label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.project-review-challenge-label.warning {
+  color: #a46305;
+}
+.project-review-challenge-label.danger {
+  color: #b74b43;
+}
+.project-review-challenge-label.neutral {
+  color: var(--color-text-light);
+}
+.project-review-challenge-text {
+  font-size: 0.76rem;
+  color: var(--color-text);
+  line-height: 1.45;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
