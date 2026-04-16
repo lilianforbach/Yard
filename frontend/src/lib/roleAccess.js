@@ -33,7 +33,7 @@ export function getFeedbackAudienceState(entryOrAudience, maybeIncludeReviewers 
 export function getFeedbackAudienceBadges(entryOrAudience, maybeIncludeReviewers = null) {
   const { baseAudience, includeReviewers } = getFeedbackAudienceState(entryOrAudience, maybeIncludeReviewers);
   const badges = [FEEDBACK_AUDIENCE_LABELS[baseAudience] || FEEDBACK_AUDIENCE_LABELS.team];
-  if (includeReviewers) badges.push('Review access');
+  if (includeReviewers) badges.push('Programme support');
   return badges;
 }
 

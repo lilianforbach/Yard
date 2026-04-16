@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -79,16 +79,20 @@ function getUploadedVisualReference(rawValue) {
   return null;
 }
 
+function getFeedbackDisplayTitle(entry) {
+  const title = (entry?.title || '').trim();
+  if (title) return title;
+  const excerpt = (entry?.content || '').replace(/\s+/g, ' ').trim();
+  if (!excerpt) return 'Feedback';
+  return excerpt.length > 88 ? `${excerpt.slice(0, 85).trim()}...` : excerpt;
+}
+
 const MAX_VISUALS = 5;
 const MAX_VISUAL_UPLOAD_BYTES = 5 * 1024 * 1024;
 const VISUAL_UPLOAD_ACCEPT = '.svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg';
 const CHALLENGE_SEVERITY_OPTIONS = [
   { value: 'slowing', label: 'Slowing' },
   { value: 'blocking', label: 'Blocking' },
-];
-const FEEDBACK_BASE_AUDIENCE_OPTIONS = [
-  { value: 'lead', label: 'Lead only' },
-  { value: 'team', label: 'Project team' },
 ];
 const CHALLENGE_DESCRIPTION_PLACEHOLDER = [
   '• Challenges can bring useful feedback, contact, or support from across the programme.',
@@ -106,7 +110,7 @@ function createEmptyProgressForm(author = '') {
     title: '',
     content: '',
     author,
-    feedbackBaseAudience: 'team',
+    feedbackBaseAudience: 'lead',
     feedbackIncludeReviewers: false,
     slidesUrl: '',
     svgUrls: [],
@@ -123,7 +127,7 @@ function hasProgressDraftChanges(mode, form, initialAuthor = '') {
   if (mode === 'feedback') {
     return (
       (form.author || '').trim() !== (initialAuthor || '').trim()
-      || normalizeFeedbackBaseAudience(form.feedbackBaseAudience) !== 'team'
+      || normalizeFeedbackBaseAudience(form.feedbackBaseAudience) !== 'lead'
       || Boolean(form.feedbackIncludeReviewers)
     );
   }
@@ -225,49 +229,99 @@ function SeverityPillGroup({ value, onChange, disabled = false }) {
   );
 }
 
-function FeedbackAudienceControls({
+function FeedbackVisibilityControls({
   baseAudience,
   includeReviewers,
   onBaseChange,
   onToggleReviewers,
   disabled = false,
 }) {
+  const teamVisible = baseAudience === 'team';
+  const [showProgrammeSupportHelp, setShowProgrammeSupportHelp] = useState(false);
+  const programmeSupportHelpId = 'feedback-programme-support-help';
+
   return (
-    <div className="feedback-audience-controls">
-      <div className="severity-pill-group feedback-audience-group" role="radiogroup" aria-label="Feedback base audience">
-        {FEEDBACK_BASE_AUDIENCE_OPTIONS.map((option) => {
-          const active = baseAudience === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              className={`severity-pill audience-${option.value}${active ? ' active' : ''}`}
-              onClick={() => onBaseChange(option.value)}
-              disabled={disabled}
-            >
-              {option.label}
-            </button>
-          );
-        })}
+    <div className="feedback-visibility-controls">
+      <div className="feedback-visibility-heading">Visibility</div>
+
+      <div className="feedback-visibility-row lead-only">
+        <div className="feedback-visibility-copy">
+          <span className="feedback-visibility-label">Project lead</span>
+          <span className="feedback-visibility-note latex-editor-hint">Always included.</span>
+        </div>
       </div>
-      <button
-        type="button"
-        className={`feedback-review-toggle${includeReviewers ? ' active' : ''}`}
-        onClick={() => onToggleReviewers(!includeReviewers)}
-        disabled={disabled}
-        aria-pressed={includeReviewers}
-      >
-        Review access
-      </button>
+
+      <div className="feedback-visibility-row">
+        <div className="feedback-visibility-copy">
+          <span className="feedback-visibility-label">Project team</span>
+        </div>
+        <button
+          type="button"
+          className={`feedback-visibility-switch ${teamVisible ? ' active' : ''}`}
+          onClick={() => onBaseChange(teamVisible ? 'lead' : 'team')}
+          disabled={disabled}
+          role="switch"
+          aria-checked={teamVisible}
+          aria-label="Show feedback to the project team"
+        >
+          <span className="feedback-visibility-switch-track" aria-hidden="true">
+            <span className="feedback-visibility-switch-thumb" />
+          </span>
+        </button>
+      </div>
+
+      <div className="feedback-visibility-row">
+        <div className="feedback-visibility-copy">
+          <span className="feedback-visibility-label feedback-visibility-label-inline">
+            Programme support
+            <span
+              className="latex-editor-help-wrap"
+              onMouseEnter={() => setShowProgrammeSupportHelp(true)}
+              onMouseLeave={() => setShowProgrammeSupportHelp(false)}
+            >
+              <button
+                type="button"
+                className="latex-editor-help-btn"
+                aria-label="Programme support help"
+                aria-describedby={showProgrammeSupportHelp ? programmeSupportHelpId : undefined}
+                aria-expanded={showProgrammeSupportHelp}
+                onFocus={() => setShowProgrammeSupportHelp(true)}
+                onBlur={() => setShowProgrammeSupportHelp(false)}
+                onClick={() => setShowProgrammeSupportHelp((current) => !current)}
+              >
+                (?)
+              </button>
+              {showProgrammeSupportHelp ? (
+                <div
+                  className="latex-editor-help-popover latex-editor-help-popover-inline feedback-visibility-help-popover"
+                  id={programmeSupportHelpId}
+                  role="tooltip"
+                >
+                  Includes all PIs and Programme team.
+                </div>
+              ) : null}
+            </span>
+          </span>
+        </div>
+        <button
+          type="button"
+          className={`feedback-visibility-switch ${includeReviewers ? ' active' : ''}`}
+          onClick={() => onToggleReviewers(!includeReviewers)}
+          disabled={disabled}
+          role="switch"
+          aria-checked={includeReviewers}
+          aria-label="Show feedback to programme support"
+        >
+          <span className="feedback-visibility-switch-track" aria-hidden="true">
+            <span className="feedback-visibility-switch-thumb" />
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
 
-function SupportingVisualsFields({
-  slidesUrl,
-  onSlidesChange,
+function SupportingVisualUploadsFields({
   visualUrls,
   onUploadFiles,
   onRemoveVisual,
@@ -325,19 +379,61 @@ function SupportingVisualsFields({
             ))}
           </div>
         )}
-
-        <div className="form-field">
-          <label>Link</label>
-          <input
-            type="text"
-            value={slidesUrl}
-            onChange={(event) => onSlidesChange(event.target.value)}
-            placeholder="Paste a slides URL or iframe embed code"
-            disabled={disabled}
-          />
-        </div>
       </div>
     </div>
+  );
+}
+
+function ProjectSlidesLinkFields({
+  slidesUrl,
+  onSlidesChange,
+  disabled,
+  legacyVisualUrls,
+  onRemoveVisual,
+}) {
+  return (
+    <>
+      <div className="form-field">
+        <label>Link</label>
+        <input
+          type="text"
+          value={slidesUrl}
+          onChange={(event) => onSlidesChange(event.target.value)}
+          placeholder="Paste slides URL or embed code"
+          disabled={disabled}
+        />
+      </div>
+
+      {legacyVisualUrls.length > 0 && (
+        <div className="form-field supporting-visuals-section">
+          <div className="supporting-visuals-heading">
+            <label>Existing uploaded visuals</label>
+          </div>
+          <p className="form-field-hint">
+            Older project visuals can still be removed here if you no longer want them shown on the page.
+          </p>
+          <div className="supporting-visuals-stack">
+            <div className="svg-draft-list">
+              {legacyVisualUrls.map((url, index) => (
+                <div key={url} className="svg-draft-item">
+                  <span className="svg-draft-label">Visual {index + 1}</span>
+                  <a href={url} target="_blank" rel="noopener noreferrer" className="slides-open-link">Open</a>
+                  <button
+                    type="button"
+                    className="svg-remove-btn"
+                    onClick={() => onRemoveVisual(index)}
+                    aria-label={`Remove project visual ${index + 1}`}
+                    disabled={disabled}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -361,6 +457,9 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const [projectSlidesSaving, setProjectSlidesSaving] = useState(false);
   const [svgUploading, setSvgUploading] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null); // { type, origIndex, title, content }
+  const [editingEntrySubmitting, setEditingEntrySubmitting] = useState(false);
+  const [editingEntrySubmitMode, setEditingEntrySubmitMode] = useState('');
+  const editingEntrySubmittingRef = useRef(false);
   const [showChallengeForm, setShowChallengeForm] = useState(false);
   const [challengeForm, setChallengeForm] = useState({ description: '', severity: 'slowing' });
   const [challengeFormError, setChallengeFormError] = useState('');
@@ -385,8 +484,16 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const [expandedFeedback, setExpandedFeedback] = useState({});
 
   const saveEntryEdit = useCallback(async (publish = false) => {
-    if (!editingEntry) return;
+    if (!editingEntry || editingEntrySubmittingRef.current) return;
     const { type, origIndex, title, content, slidesUrl, svgUrls, baseAudience, includeReviewers } = editingEntry;
+    const trimmedTitle = (title || '').trim();
+    const trimmedContent = (content || '').trim();
+    if (type === 'feedback' && !trimmedContent) return;
+    if (!trimmedTitle && !trimmedContent) return;
+    const submitMode = type === 'feedback' ? 'feedback' : (publish ? 'publish' : 'quiet');
+    editingEntrySubmittingRef.current = true;
+    setEditingEntrySubmitting(true);
+    setEditingEntrySubmitMode(submitMode);
     try {
       const payload = { title, content, publish };
       if (type === 'updates') {
@@ -403,6 +510,10 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
     } catch (err) {
       console.error('Failed to update entry:', err);
       showToast(type === 'feedback' ? 'Failed to save feedback' : 'Failed to update entry', 'error');
+    } finally {
+      editingEntrySubmittingRef.current = false;
+      setEditingEntrySubmitting(false);
+      setEditingEntrySubmitMode('');
     }
   }, [editingEntry, projectId, refreshProjects, showToast]);
 
@@ -580,12 +691,6 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
     });
   }, [appendSvgUrl, editingEntry?.svgUrls, uploadVisualFiles]);
 
-  const handleProjectSvgUpload = useCallback(async (files) => {
-    await uploadVisualFiles(files, projectSvgDrafts?.length || 0, (url) => {
-      setProjectSvgDrafts((current) => appendSvgUrl(current, url));
-    });
-  }, [appendSvgUrl, projectSvgDrafts, uploadVisualFiles]);
-
   const deleteUploadedSvgIfUnused = useCallback(async (url) => {
     const reference = getUploadedVisualReference(url);
     if (!reference) return;
@@ -675,7 +780,14 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const handleProgressSubmit = async (publish = true, event = null) => {
     event?.preventDefault?.();
     setProgressFormError('');
-    if (!progressForm.title.trim() || !progressForm.content.trim()) {
+    const trimmedTitle = progressForm.title.trim();
+    const trimmedContent = progressForm.content.trim();
+    if (showProgressForm === 'feedback') {
+      if (!trimmedContent) {
+        setProgressFormError('Please add some feedback before saving.');
+        return;
+      }
+    } else if (!trimmedTitle || !trimmedContent) {
       setProgressFormError('Please fill in all required fields.');
       return;
     }
@@ -689,9 +801,6 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
         publish,
       };
       if (showProgressForm !== 'feedback') {
-        if (progressForm.slidesUrl.trim()) {
-          payload.slidesUrl = normalizeSlidesInput(progressForm.slidesUrl);
-        }
         payload.svgUrls = (progressForm.svgUrls || []).map(normalizeSvgInput).filter(Boolean);
       } else {
         payload.audience = normalizeFeedbackBaseAudience(progressForm.feedbackBaseAudience);
@@ -804,6 +913,16 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   }, [projectId, projectSlidesDraft, projectSvgDrafts, refreshProjects, replaceProject, showToast]);
 
   if (!project) return <div>Project not found</div>;
+
+  const editingEntryHasContent = Boolean((editingEntry?.title || '').trim() || (editingEntry?.content || '').trim());
+  const editingFeedbackHasContent = Boolean((editingEntry?.content || '').trim());
+  const editingEntrySaveDisabled = editingEntrySubmitting
+    || svgUploading
+    || (editingEntry?.type === 'feedback' ? !editingFeedbackHasContent : !editingEntryHasContent);
+  const closeEditingEntry = () => {
+    if (editingEntrySubmitting) return;
+    setEditingEntry(null);
+  };
 
   const inst = getInstitution(project.institution);
   const lead = getPerson(getProjectLeadId(project));
@@ -1328,7 +1447,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
               <div className="pf-section-header">
                 <div className="pf-section-heading-stack">
                   <h3>Feedback</h3>
-                  <p className="pf-section-note">Choose a base audience, then optionally include Review access.</p>
+                  <p className="pf-section-note">Choose who should see each piece of feedback.</p>
                 </div>
                 {canAddFeedback && (
                   <div className="pf-section-actions">
@@ -1343,7 +1462,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                   <div key={i} className={`update-item feedback-item ${expandedFeedback[i] ? 'expanded' : ''}`}>
                     <div className="update-header" onClick={() => setExpandedFeedback((prev) => ({ ...prev, [i]: !prev[i] }))}>
                       <div className="update-row-grid">
-                        <div className="update-title">{entry.title}</div>
+                        <div className="update-title">{getFeedbackDisplayTitle(entry)}</div>
                         <span className="entry-type-badge feedback">Feedback</span>
                         <div className="update-date-cell">
                           <span className="update-meta-date">{formatDate(entry.lastModified || entry.date)}</span>
@@ -1468,7 +1587,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                 )}
               </div>
             ) : (
-              <p className="empty-state">No slides or uploaded visuals added yet.</p>
+              <p className="empty-state">No presentation slides added yet.</p>
             )}
           </div>
       </div>
@@ -1501,19 +1620,20 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
       {showProgressForm && (
         <WritingModal
           title={`Add ${showProgressForm === 'feedback' ? 'Feedback' : 'Update'}`}
-          subtitle={showProgressForm === 'feedback' ? 'Choose a base audience, then optionally include Review access.' : 'Record a project update that others can refer back to later. Save quietly to keep it on the project page, or Publish to bring it back into shared programme attention.'}
+          subtitle={showProgressForm === 'feedback' ? 'You can keep this feedback focused or share it more widely.' : 'Record a project update that others can refer back to later. Save quietly to keep it on the project page, or Publish to bring it back into shared programme attention.'}
           onClose={dismissProgressComposer}
         >
           {progressFormError && <div className="form-error-box">{progressFormError}</div>}
           <form onSubmit={(event) => handleProgressSubmit(showProgressForm === 'feedback' ? false : true, event)} className="cg-form">
-            <div className="form-field">
-              <label>Title</label>
-              <input type="text" value={progressForm.title} onChange={e => setProgressForm({ ...progressForm, title: e.target.value })} required placeholder={showProgressForm === 'feedback' ? 'e.g. Q1 Review Feedback' : 'e.g. March Progress Summary'} disabled={progressSubmitting} />
-            </div>
+            {showProgressForm !== 'feedback' && (
+              <div className="form-field">
+                <label>Title</label>
+                <input type="text" value={progressForm.title} onChange={e => setProgressForm({ ...progressForm, title: e.target.value })} required placeholder="e.g. March Progress Summary" disabled={progressSubmitting} />
+              </div>
+            )}
             {showProgressForm === 'feedback' && (
               <div className="form-field">
-                <label>Audience</label>
-                <FeedbackAudienceControls
+                <FeedbackVisibilityControls
                   baseAudience={normalizeFeedbackBaseAudience(progressForm.feedbackBaseAudience)}
                   includeReviewers={Boolean(progressForm.feedbackIncludeReviewers)}
                   onBaseChange={(value) => setProgressForm({ ...progressForm, feedbackBaseAudience: value })}
@@ -1528,16 +1648,14 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                 value={progressForm.content}
                 onChange={(value) => setProgressForm({ ...progressForm, content: value })}
                 rows={10}
-                placeholder={showProgressForm === 'feedback' ? '' : 'Summarise what changed, what moved forward, and what comes next...'}
+                placeholder={showProgressForm === 'feedback' ? 'Write the feedback you want to leave...' : 'Summarise what changed, what moved forward, and what comes next...'}
                 disabled={progressSubmitting}
                 autoFocus
                 previewEmptyText={`Nothing to preview in this ${showProgressForm} yet.`}
               />
             </div>
             {showProgressForm === 'update' && (
-              <SupportingVisualsFields
-                slidesUrl={progressForm.slidesUrl}
-                onSlidesChange={(value) => setProgressForm({ ...progressForm, slidesUrl: value })}
+              <SupportingVisualUploadsFields
                 visualUrls={progressForm.svgUrls}
                 onUploadFiles={handleProgressSvgUpload}
                 onRemoveVisual={removeProgressSvg}
@@ -1568,23 +1686,20 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
       {showProjectSlidesForm && (
         <WritingModal
           title={project.slidesUrl || projectSvgUrls.length > 0 ? 'Edit Presentation Slides' : 'Add Presentation Slides'}
-          subtitle="Add a slides link or upload visuals to display project-level material directly on this page."
+          subtitle=""
           onClose={() => setShowProjectSlidesForm(false)}
         >
           <div className="cg-form">
-            <SupportingVisualsFields
+            <ProjectSlidesLinkFields
               slidesUrl={projectSlidesDraft}
               onSlidesChange={setProjectSlidesDraft}
-              visualUrls={projectSvgDrafts}
-              onUploadFiles={handleProjectSvgUpload}
+              legacyVisualUrls={projectSvgDrafts}
               onRemoveVisual={removeProjectSvg}
               disabled={projectSlidesSaving}
-              uploading={svgUploading}
-              description="Figures, diagrams, charts, and photos to include with this project section."
             />
             <div className="writing-form-actions">
-              <button type="button" className="save-mode-btn tertiary" onClick={() => setShowProjectSlidesForm(false)} disabled={projectSlidesSaving || svgUploading}>Cancel</button>
-              <button type="button" className="save-mode-btn publish" onClick={saveProjectSlides} disabled={projectSlidesSaving || svgUploading}>Save Slides</button>
+              <button type="button" className="save-mode-btn tertiary" onClick={() => setShowProjectSlidesForm(false)} disabled={projectSlidesSaving}>Cancel</button>
+              <button type="button" className="save-mode-btn publish" onClick={saveProjectSlides} disabled={projectSlidesSaving}>Save Slides</button>
             </div>
           </div>
         </WritingModal>
@@ -1594,68 +1709,90 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
         <WritingModal
           title={`Edit ${editingEntry.type === 'feedback' ? 'Feedback' : 'Update'}`}
           subtitle={editingEntry.type === 'feedback'
-            ? 'Adjust the base audience and decide whether to include Review access.'
+            ? 'You can keep this feedback focused or share it more widely.'
             : 'Use Save quietly for wording fixes and Publish when the revised entry should resurface in shared programme attention.'}
-          onClose={() => setEditingEntry(null)}
+          onClose={closeEditingEntry}
         >
           <div className="cg-form">
-            <div className="form-field">
-              <label>Title</label>
-              <input
-                type="text"
-                value={editingEntry.title}
-                onChange={(e) => setEditingEntry({ ...editingEntry, title: e.target.value })}
-                placeholder="Entry title"
-                disabled={progressSubmitting}
-              />
-            </div>
+            {editingEntry.type !== 'feedback' && (
+              <div className="form-field">
+                <label>Title</label>
+                <input
+                  type="text"
+                  value={editingEntry.title}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, title: e.target.value })}
+                  placeholder="Entry title"
+                  disabled={editingEntrySubmitting}
+                />
+              </div>
+            )}
             <div className="form-field">
               <label>Content</label>
               <LatexTextarea
                 value={editingEntry.content}
                 onChange={(value) => setEditingEntry({ ...editingEntry, content: value })}
                 rows={12}
-                disabled={progressSubmitting}
+                placeholder={editingEntry.type === 'feedback' ? 'Write the feedback you want to leave...' : ''}
+                disabled={editingEntrySubmitting}
                 autoFocus
                 previewEmptyText="Nothing to preview yet."
               />
+              {editingEntry.type === 'feedback' && !editingFeedbackHasContent && (
+                <p className="form-field-hint">Add some feedback before saving.</p>
+              )}
+              {editingEntry.type !== 'feedback' && !editingEntryHasContent && (
+                <p className="form-field-hint">Add a title or some content before saving.</p>
+              )}
             </div>
             {editingEntry.type === 'feedback' && (
               <div className="form-field">
-                <label>Audience</label>
-                <FeedbackAudienceControls
+                <FeedbackVisibilityControls
                   baseAudience={normalizeFeedbackBaseAudience(editingEntry.baseAudience || editingEntry.audience)}
                   includeReviewers={Boolean(editingEntry.includeReviewers)}
                   onBaseChange={(value) => setEditingEntry({ ...editingEntry, baseAudience: value, audience: value })}
                   onToggleReviewers={(value) => setEditingEntry({ ...editingEntry, includeReviewers: value })}
-                  disabled={progressSubmitting}
+                  disabled={editingEntrySubmitting}
                 />
               </div>
             )}
             {editingEntry.type === 'updates' && (
-              <>
-                <SupportingVisualsFields
-                  slidesUrl={editingEntry.slidesUrl || ''}
-                  onSlidesChange={(value) => setEditingEntry({ ...editingEntry, slidesUrl: value })}
-                  visualUrls={editingEntry.svgUrls || []}
-                  onUploadFiles={handleEditSvgUpload}
-                  onRemoveVisual={removeEditingSvg}
-                  disabled={progressSubmitting}
-                  uploading={svgUploading}
-                  description="Figures, diagrams, charts, and photos to include with this update."
-                />
-              </>
+              <SupportingVisualUploadsFields
+                visualUrls={editingEntry.svgUrls || []}
+                onUploadFiles={handleEditSvgUpload}
+                onRemoveVisual={removeEditingSvg}
+                disabled={editingEntrySubmitting}
+                uploading={svgUploading}
+                description="Figures, diagrams, charts, and photos to include with this update."
+              />
             )}
             {editingEntry.type === 'feedback' && editingEntry.author && (
               <div className="form-inline-note">Author: {editingEntry.author}</div>
             )}
             <div className="writing-form-actions">
               {editingEntry.type === 'feedback' ? (
-                <button className="save-mode-btn publish" onClick={() => saveEntryEdit(false)} disabled={progressSubmitting || svgUploading}>Save Feedback</button>
+                <button
+                  className="save-mode-btn publish"
+                  onClick={() => saveEntryEdit(false)}
+                  disabled={editingEntrySaveDisabled}
+                >
+                  {editingEntrySubmitting && editingEntrySubmitMode === 'feedback' ? 'Saving...' : 'Save Feedback'}
+                </button>
               ) : (
                 <>
-                  <button className="save-mode-btn quiet" onClick={() => saveEntryEdit(false)} disabled={progressSubmitting || svgUploading}>Save quietly</button>
-                  <button className="save-mode-btn publish" onClick={() => saveEntryEdit(true)} disabled={progressSubmitting || svgUploading}>Publish</button>
+                  <button
+                    className="save-mode-btn quiet"
+                    onClick={() => saveEntryEdit(false)}
+                    disabled={editingEntrySaveDisabled}
+                  >
+                    {editingEntrySubmitting && editingEntrySubmitMode === 'quiet' ? 'Saving...' : 'Save quietly'}
+                  </button>
+                  <button
+                    className="save-mode-btn publish"
+                    onClick={() => saveEntryEdit(true)}
+                    disabled={editingEntrySaveDisabled}
+                  >
+                    {editingEntrySubmitting && editingEntrySubmitMode === 'publish' ? 'Publishing...' : 'Publish'}
+                  </button>
                 </>
               )}
             </div>

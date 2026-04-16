@@ -2034,7 +2034,7 @@ class ProjectUpdateCreate(BaseModel):
 
 
 class FeedbackCreate(BaseModel):
-    title: str
+    title: Optional[str] = ""
     content: str
     author: str = ""
     date: Optional[str] = None
@@ -2047,6 +2047,18 @@ class FeedbackCreate(BaseModel):
     def check_audience(cls, v: str) -> str:
         if v not in VALID_FEEDBACK_AUDIENCES:
             raise ValueError(f"audience must be one of {VALID_FEEDBACK_AUDIENCES}, got {v}")
+        return v
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, v: Optional[str]) -> str:
+        return (v or "").strip()
+
+    @field_validator("content")
+    @classmethod
+    def check_content(cls, v: str) -> str:
+        if not (v or "").strip():
+            raise ValueError("content cannot be empty")
         return v
 
     @field_validator("includeReviewers")
@@ -3043,7 +3055,7 @@ async def add_project_feedback(
         raise HTTPException(status_code=403, detail="Only users with review access who are not the project lead can add feedback")
     entry_date = data.date or utc_now().strftime("%Y-%m-%d")
     feedback_doc = {
-        "title": data.title,
+        "title": (data.title or "").strip(),
         "content": data.content,
         "author": linked.get("name") if linked else (user.get("name") or user.get("email")),
         "date": entry_date,
@@ -3177,8 +3189,11 @@ async def edit_project_feedback(
         raise HTTPException(status_code=404, detail="Feedback entry not found")
     if not can_edit_feedback_entry(user, project, linked, feedback[entry_index]):
         raise HTTPException(status_code=403, detail="Only the feedback author or an admin can edit")
+    next_content = data.content if data.content is not None else feedback[entry_index].get("content", "")
+    if not (next_content or "").strip():
+        raise HTTPException(status_code=422, detail="Feedback content cannot be empty")
     if data.title is not None:
-        feedback[entry_index]["title"] = data.title
+        feedback[entry_index]["title"] = data.title.strip()
     if data.content is not None:
         feedback[entry_index]["content"] = data.content
     if data.audience is not None:

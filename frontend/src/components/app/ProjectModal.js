@@ -7,6 +7,14 @@ import { getFeedbackAudienceBadges, getLinkedPerson, getProjectSurfaceAccess } f
 import SlidePanel from './SlidePanel';
 import LatexContent from './LatexContent';
 
+function getFeedbackDisplayTitle(entry) {
+  const title = (entry?.title || '').trim();
+  if (title) return title;
+  const excerpt = (entry?.content || '').replace(/\s+/g, ' ').trim();
+  if (!excerpt) return 'Feedback';
+  return excerpt.length > 88 ? `${excerpt.slice(0, 85).trim()}...` : excerpt;
+}
+
 export default function ProjectModal({ projectId, onClose, onViewFull, onPersonClick }) {
   const { getProject, getPerson, getInstitution, milestones } = useData();
   const { permissions } = useAuth();
@@ -77,7 +85,7 @@ export default function ProjectModal({ projectId, onClose, onViewFull, onPersonC
           <h4>Feedback</h4>
           {visibleFeedback.map((fb, i) => (
             <div key={i} className="update-item-compact">
-              <div className="update-title-compact">{fb.title || fb.content?.substring(0, 80)}</div>
+              <div className="update-title-compact">{getFeedbackDisplayTitle(fb)}</div>
               <div className="update-meta-compact">
                 {formatDate(fb.lastModified || fb.date)} &bull; {fb.author}
                 {getFeedbackAudienceBadges(fb).map((badge) => ` • ${badge}`)}
