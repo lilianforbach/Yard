@@ -1447,7 +1447,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
               <div className="pf-section-header">
                 <div className="pf-section-heading-stack">
                   <h3>Feedback</h3>
-                  <p className="pf-section-note">Choose who should see each piece of feedback.</p>
+                  <p className="pf-section-note">This section may look empty because feedback is only visible to the audience chosen for it.</p>
                 </div>
                 {canAddFeedback && (
                   <div className="pf-section-actions">
@@ -1513,9 +1513,6 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                   </div>
                 ))}
               </div>
-              {feedbackEntries.length === 0 && (
-                <p className="empty-state">No feedback visible here yet.</p>
-              )}
               {feedbackEntries.length > 2 && (
                 <button
                   type="button"
