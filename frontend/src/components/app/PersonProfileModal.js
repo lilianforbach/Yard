@@ -297,7 +297,6 @@ export default function PersonProfileModal({
   return (
     <WritingModal
       title={`Edit profile for ${person.name}`}
-      subtitle="Keep this light-touch. Highlight the few things people should know, and the few things you would be happy to be contacted about."
       onClose={onClose}
       footer={footer}
       className="profile-editor-modal person-profile-editor-modal"
@@ -309,12 +308,6 @@ export default function PersonProfileModal({
               <h3>Profile details</h3>
             </div>
           </div>
-
-          {!canEditIdentity && (
-            <div className="form-inline-note">
-              Role and institution are managed centrally. Use this editor for your profile details, contact settings, research interests, shared expertise, equipment support, and optional links.
-            </div>
-          )}
 
           {error && <div className="auth-error">{error}</div>}
 

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import shutil
 from threading import RLock
 from typing import Any, Dict, List, Optional
 from urllib.parse import unquote, urlparse
@@ -32,6 +33,7 @@ DATA_FILE = Path(os.environ.get("YARD_DATA_FILE", str(DATA_ROOT / "data_store.js
 UPLOADS_DIR = Path(os.environ.get("YARD_UPLOADS_DIR", str(DATA_ROOT / "uploads"))).expanduser()
 UPLOADS_SVG_DIR = UPLOADS_DIR / "svg"
 UPLOADS_VISUAL_DIR = UPLOADS_DIR / "visual"
+BUNDLED_VISUALS_DIR = ROOT_DIR / "uploads" / "visual"
 LOCAL_COLLECTIONS = (
     "users",
     "institutions",
@@ -172,6 +174,39 @@ def utc_now() -> datetime:
 
 def clone_document(document: Any) -> Any:
     return deepcopy(document)
+
+
+def sync_bundled_demo_visuals() -> None:
+    """Copy bundled demo visuals into the active uploads dir when missing.
+
+    Production/demo deployments often move uploads onto a persistent writable path
+    (for example `/home/site/yard-data/uploads`). Seeded project records still point
+    at `/api/uploads/visual/...`, so make sure the bundled demo assets are present
+    there without overwriting any existing files.
+    """
+    if not BUNDLED_VISUALS_DIR.is_dir():
+        return
+
+    source_root = BUNDLED_VISUALS_DIR.resolve()
+    target_root = UPLOADS_VISUAL_DIR.resolve()
+    if source_root == target_root:
+        return
+
+    target_root.mkdir(parents=True, exist_ok=True)
+    copied = 0
+    for source_file in BUNDLED_VISUALS_DIR.iterdir():
+        if not source_file.is_file():
+            continue
+        if source_file.suffix.lower() not in {".svg", ".png", ".jpg", ".jpeg"}:
+            continue
+        target_file = target_root / source_file.name
+        if target_file.exists():
+            continue
+        shutil.copy2(source_file, target_file)
+        copied += 1
+
+    if copied:
+        logger.info("Copied %s bundled demo visuals into %s", copied, target_root)
 
 
 def local_store_template() -> Dict[str, List[Dict[str, Any]]]:
@@ -3778,6 +3813,8 @@ async def get_dashboard_activity(
     return activities
 
 async def seed_database() -> None:
+    sync_bundled_demo_visuals()
+
     admin_email = os.environ.get("ADMIN_EMAIL", "admin@yard.local").lower()
     admin_password = get_admin_password()
     existing_admin = await get_user_by_email(admin_email)
@@ -3874,16 +3911,23 @@ async def run_migrations(seed: dict) -> None:
             await update_fields("projects", "id", proj["id"], patches)
             logger.info("Migration: patched project %s with %s", proj["id"], list(patches.keys()))
 
-    # Backfill equipment for legacy records that predate the field.
+    # Backfill curated person fields for legacy records when the demo seed changes.
     for person in seed.get("people", []):
-        if not person.get("equipment"):
-            continue
         existing = await get_by_field("people", "id", person["id"])
         if not existing:
             continue
-        if "equipment" not in existing:
-            await update_fields("people", "id", person["id"], {"equipment": person["equipment"]})
-            logger.info("Migration: synced equipment for %s", person["id"])
+        patches: Dict[str, Any] = {}
+
+        if person.get("equipment") and "equipment" not in existing:
+            patches["equipment"] = person["equipment"]
+
+        seed_research = person.get("researchDescription")
+        if seed_research is not None and existing.get("researchDescription") != seed_research:
+            patches["researchDescription"] = seed_research
+
+        if patches:
+            await update_fields("people", "id", person["id"], patches)
+            logger.info("Migration: synced person fields for %s (%s)", person["id"], ", ".join(patches.keys()))
 
     # Migration 4: Normalize concept notes onto the active/progressed model.
     for existing_note in await list_collection("conceptnotes", limit=500):

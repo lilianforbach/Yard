@@ -297,7 +297,7 @@ function FeedbackVisibilityControls({
                   id={programmeSupportHelpId}
                   role="tooltip"
                 >
-                  Includes all PIs and Programme team.
+                  Includes all PIs, the RETO, and the programme manager.
                 </div>
               ) : null}
             </span>
@@ -1648,7 +1648,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                 value={progressForm.content}
                 onChange={(value) => setProgressForm({ ...progressForm, content: value })}
                 rows={10}
-                placeholder={showProgressForm === 'feedback' ? 'Write the feedback you want to leave...' : 'Summarise what changed, what moved forward, and what comes next...'}
+                placeholder={showProgressForm === 'feedback' ? '' : 'Summarise what changed, what moved forward, and what comes next...'}
                 disabled={progressSubmitting}
                 autoFocus
                 previewEmptyText={`Nothing to preview in this ${showProgressForm} yet.`}
@@ -1732,7 +1732,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                 value={editingEntry.content}
                 onChange={(value) => setEditingEntry({ ...editingEntry, content: value })}
                 rows={12}
-                placeholder={editingEntry.type === 'feedback' ? 'Write the feedback you want to leave...' : ''}
+                placeholder=""
                 disabled={editingEntrySubmitting}
                 autoFocus
                 previewEmptyText="Nothing to preview yet."

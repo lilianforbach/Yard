@@ -2441,7 +2441,7 @@ textarea.editable-field-input { min-height: 4rem; }
 }
 .project-review-header {
   display: grid;
-  grid-template-columns: minmax(0, 1.95fr) minmax(220px, 1fr) minmax(280px, 1.45fr);
+  grid-template-columns: minmax(200px, 1.15fr) minmax(170px, 0.7fr) minmax(300px, 1.95fr);
   gap: 0.9rem;
   padding: 0.8rem 1.1rem;
   position: sticky;
@@ -2474,7 +2474,7 @@ textarea.editable-field-input { min-height: 4rem; }
   border: none;
   background: transparent;
   display: grid;
-  grid-template-columns: minmax(0, 1.95fr) minmax(220px, 1fr) minmax(280px, 1.45fr);
+  grid-template-columns: minmax(200px, 1.15fr) minmax(170px, 0.7fr) minmax(300px, 1.95fr);
   gap: 0.9rem;
   text-align: left;
   padding: 0.9rem 1.1rem;
