@@ -140,13 +140,21 @@ function getChallengeSeverityLabel(severity) {
   }
 }
 
-function getProjectContextSortDate(row) {
-  return row.reviewSnapshot?.lastActivity?.date || row.project.lastModified || '';
+function getLatestChallengeDate(row) {
+  return (row.reviewSnapshot?.challengeSnapshot?.items || []).reduce((latest, challenge) => {
+    const challengeDate = challenge.lastModified || challenge.date || '';
+    return compareDateStringsDesc(challengeDate, latest) < 0 ? challengeDate : latest;
+  }, '');
 }
 
-function compareProjectsByRecentContext(a, b) {
-  const activityDiff = compareDateStringsDesc(getProjectContextSortDate(a), getProjectContextSortDate(b));
-  if (activityDiff !== 0) return activityDiff;
+function compareProjectsByChallengeContext(a, b) {
+  const aChallengeDate = getLatestChallengeDate(a);
+  const bChallengeDate = getLatestChallengeDate(b);
+  const challengePresenceDiff = Number(Boolean(bChallengeDate)) - Number(Boolean(aChallengeDate));
+  if (challengePresenceDiff !== 0) return challengePresenceDiff;
+
+  const challengeDateDiff = compareDateStringsDesc(aChallengeDate, bChallengeDate);
+  if (challengeDateDiff !== 0) return challengeDateDiff;
 
   const milestoneDiff = compareDateStringsAsc(a.nextMilestone?.dueDate || '9999-12-31', b.nextMilestone?.dueDate || '9999-12-31');
   if (milestoneDiff !== 0) return milestoneDiff;
@@ -406,7 +414,7 @@ export default function Projects({
       return true;
     });
 
-    return rows.sort(compareProjectsByRecentContext);
+    return rows.sort(compareProjectsByChallengeContext);
   }, [projectIndex, reviewSearch]);
 
   const roadmapRows = useMemo(() => (
@@ -766,7 +774,7 @@ export default function Projects({
               </div>
 
               <p className="projects-review-helper-copy">
-                Projects are shown by recent visible movement, with current challenges and milestones kept in view.
+                Projects with current challenges are shown first. Projects without current challenges remain visible below for context.
               </p>
 
               <div className="projects-review-list">
