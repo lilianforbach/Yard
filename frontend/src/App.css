@@ -1054,7 +1054,7 @@ textarea {
 .dashboard-gallery-group {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: start;
+  align-items: stretch;
   gap: 0.85rem;
 }
 .dashboard-gallery-group-title {
@@ -1076,6 +1076,7 @@ textarea {
   border-radius: var(--radius);
   padding: 1rem 1.1rem;
   min-width: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -1152,10 +1153,9 @@ textarea {
 .dash-stream-item.clickable:focus-visible {
   background: var(--color-hover);
   border-radius: 8px;
-  margin: 0 -0.4rem;
-  padding-left: 0.4rem;
-  padding-right: 0.4rem;
   outline: none;
+  color: inherit;
+  text-decoration: none;
 }
 .dash-stream-item.clickable + .dash-stream-item {
   border-top: 1px solid var(--color-border);
