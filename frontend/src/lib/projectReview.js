@@ -309,3 +309,7 @@ export function canAccessProjectReview(permissions, linkedPerson) {
 
   return false;
 }
+
+export function canAccessProjectContext(permissions) {
+  return Boolean(permissions);
+}

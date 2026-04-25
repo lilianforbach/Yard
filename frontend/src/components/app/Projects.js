@@ -12,7 +12,7 @@ import TimelineExperiment from './TimelineExperiment';
 import { formatDate } from '../../lib/constants';
 import { buildProjectTeamPayload, getProjectLeadId, getProjectTeamMemberIds } from '../../lib/projectTeam';
 import {
-  canAccessProjectReview,
+  canAccessProjectContext,
   compareDateStringsAsc,
   compareDateStringsDesc,
   getProjectActivityLabel,
@@ -29,19 +29,6 @@ const TIMELINE_RANGE_OPTIONS = [
   { value: '3y', label: '3 years' },
   { value: 'programme', label: 'Programme' },
 ];
-const DEFAULT_REVIEW_STATE = {
-  label: '',
-  bucket: 'quiet',
-  rank: 99,
-  tone: 'neutral',
-  detail: '',
-};
-const DEFAULT_FRESHNESS_CUE = {
-  bucket: 'quiet',
-  rank: 99,
-  label: '',
-  detail: '',
-};
 
 function parseMilestoneDate(value) {
   if (!value) return null;
@@ -147,78 +134,34 @@ function getChallengeSeverityLabel(severity) {
   }
 }
 
-function getSafeReviewState(reviewSnapshot) {
-  return reviewSnapshot?.reviewState || DEFAULT_REVIEW_STATE;
+function getProjectContextSortDate(row) {
+  return row.reviewSnapshot?.lastActivity?.date || row.project.lastModified || '';
 }
 
-function getSafeFreshnessCue(freshnessCue) {
-  return freshnessCue || DEFAULT_FRESHNESS_CUE;
-}
-
-function compareProjectsByHealthOrder(a, b) {
-  const rankDiff = getSafeReviewState(a.reviewSnapshot).rank - getSafeReviewState(b.reviewSnapshot).rank;
-  if (rankDiff !== 0) return rankDiff;
-
-  const severityDiff = getReviewSeverityScore(a.reviewSnapshot) - getReviewSeverityScore(b.reviewSnapshot);
-  if (severityDiff !== 0) return severityDiff;
-
-  const blockingDiff = (b.reviewSnapshot?.challengeSnapshot?.blockingCount ?? 0) - (a.reviewSnapshot?.challengeSnapshot?.blockingCount ?? 0);
-  if (blockingDiff !== 0) return blockingDiff;
-
-  const slowingDiff = (b.reviewSnapshot?.challengeSnapshot?.slowingCount ?? 0) - (a.reviewSnapshot?.challengeSnapshot?.slowingCount ?? 0);
-  if (slowingDiff !== 0) return slowingDiff;
-
-  const overdueDiff = (b.reviewSnapshot?.milestoneSnapshot?.overdueCount ?? 0) - (a.reviewSnapshot?.milestoneSnapshot?.overdueCount ?? 0);
-  if (overdueDiff !== 0) return overdueDiff;
-
-  const freshnessDiff = getSafeFreshnessCue(a.freshnessCue).rank - getSafeFreshnessCue(b.freshnessCue).rank;
-  if (freshnessDiff !== 0) return freshnessDiff;
+function compareProjectsByRecentContext(a, b) {
+  const activityDiff = compareDateStringsDesc(getProjectContextSortDate(a), getProjectContextSortDate(b));
+  if (activityDiff !== 0) return activityDiff;
 
   const milestoneDiff = compareDateStringsAsc(a.nextMilestone?.dueDate || '9999-12-31', b.nextMilestone?.dueDate || '9999-12-31');
   if (milestoneDiff !== 0) return milestoneDiff;
 
-  const activityDiff = compareDateStringsDesc(a.lastActivityDate, b.lastActivityDate);
-  if (activityDiff !== 0) return activityDiff;
-
   return a.project.title.localeCompare(b.project.title);
 }
 
-function getChallengePriority(severity) {
-  switch (severity) {
-    case 'blocking':
-      return 0;
-    case 'slowing':
-      return 1;
-    case 'minor':
-      return 1;
-    default:
-      return 2;
-  }
+function compareProjectsByNextMilestone(a, b) {
+  const milestoneDiff = compareDateStringsAsc(a.nextMilestone?.dueDate || '9999-12-31', b.nextMilestone?.dueDate || '9999-12-31');
+  if (milestoneDiff !== 0) return milestoneDiff;
+
+  return a.project.title.localeCompare(b.project.title);
 }
 
 function getChallengeColumn(challengeSnapshot) {
   const { items = [] } = challengeSnapshot || {};
   return [...items].sort((a, b) => {
-    const severityDiff = getChallengePriority(a.severity) - getChallengePriority(b.severity);
-    if (severityDiff !== 0) return severityDiff;
-    return 0;
+    const dateDiff = compareDateStringsDesc(a.lastModified || a.date || '', b.lastModified || b.date || '');
+    if (dateDiff !== 0) return dateDiff;
+    return (a.description || '').localeCompare(b.description || '');
   });
-}
-
-function getReviewSeverityScore(reviewSnapshot) {
-  const challengeSnapshot = reviewSnapshot?.challengeSnapshot || {};
-  const milestoneSnapshot = reviewSnapshot?.milestoneSnapshot || {};
-  const blockingCount = challengeSnapshot.blockingCount || 0;
-  const slowingCount = challengeSnapshot.slowingCount || 0;
-  const overdueCount = milestoneSnapshot.overdueCount || 0;
-  const approachingCount = milestoneSnapshot.approachingCount || 0;
-
-  if (blockingCount > 0 && overdueCount > 0) return 0;
-  if (blockingCount > 0) return 1;
-  if (overdueCount > 0) return 2;
-  if (slowingCount > 0) return 3;
-  if (approachingCount > 0) return 4;
-  return 5;
 }
 
 function groupByMonth(items) {
@@ -281,7 +224,7 @@ export default function Projects({
   const [addProjectSubmitting, setAddProjectSubmitting] = useState(false);
 
   const linkedPerson = getLinkedPerson(permissions, getPerson);
-  const reviewAccess = canAccessProjectReview(permissions, linkedPerson);
+  const reviewAccess = canAccessProjectContext(permissions);
   const canAddProject = canCreateProjects(permissions, linkedPerson);
   const requestedView = mode === 'review-only' ? 'review' : searchParams.get('view');
   const activeView = mode === 'review-only'
@@ -434,17 +377,13 @@ export default function Projects({
   const reviewRows = useMemo(() => {
     const query = reviewSearch;
     const rows = projectIndex.filter((row) => {
-      const { lead, reviewSnapshot, nextMilestone } = row;
-      const reviewState = getSafeReviewState(reviewSnapshot);
+      const { lead, nextMilestone } = row;
 
       if (!matchesSearchQuery(
         query,
         row.project.title,
         row.project.description,
         lead?.name,
-        reviewState.detail,
-        row.freshnessCue?.detail,
-        row.freshnessCue?.label,
         nextMilestone?.title,
         row.lastActivitySummary,
         row.lastActivityLabel
@@ -455,7 +394,7 @@ export default function Projects({
       return true;
     });
 
-    return rows.sort(compareProjectsByHealthOrder);
+    return rows.sort(compareProjectsByRecentContext);
   }, [projectIndex, reviewSearch]);
 
   const roadmapRows = useMemo(() => (
@@ -499,9 +438,6 @@ export default function Projects({
         row.project.title,
         row.project.description,
         row.lead?.name,
-        getSafeReviewState(row.reviewSnapshot).detail,
-        row.freshnessCue?.detail,
-        row.freshnessCue?.label,
         row.nextMilestone?.title,
         row.lastActivitySummary,
         row.lastActivityLabel
@@ -554,7 +490,7 @@ export default function Projects({
         if (!aProjectRow || !bProjectRow) {
           return a.projectTitle.localeCompare(b.projectTitle);
         }
-        return compareProjectsByHealthOrder(aProjectRow, bProjectRow);
+        return compareProjectsByNextMilestone(aProjectRow, bProjectRow);
       });
   }, [filteredTimelineRows, projectIndex, projectIndexById, timelineSearch, timelineWindow]);
 
@@ -813,12 +749,12 @@ export default function Projects({
               <div className="section-actions projects-review-toolbar">
                 <div className="search-box section-search">
                   <Search size={16} />
-                  <input type="text" placeholder="Search review queue..." value={reviewSearch} onChange={(e) => setReviewSearch(e.target.value)} />
+                  <input type="text" placeholder="Search project context..." value={reviewSearch} onChange={(e) => setReviewSearch(e.target.value)} />
                 </div>
               </div>
 
               <p className="projects-review-helper-copy">
-                Projects are ordered by current challenges, milestones, and recent published activity, so those most likely to benefit from review appear first.
+                Projects are shown by recent visible movement, with current challenges and milestones kept in view.
               </p>
 
               <div className="projects-review-list">

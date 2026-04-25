@@ -9,7 +9,7 @@ const primaryNav = [
   { id: 'projects', label: 'Projects', icon: Microscope },
 ];
 
-const reviewNavItem = { id: 'review', label: 'Review', icon: Repeat2 };
+const reviewNavItem = { id: 'review', label: 'Project Context', icon: Repeat2 };
 
 const secondaryNav = [
   { id: 'conceptnotes', label: 'Concept Notes', icon: Lightbulb },

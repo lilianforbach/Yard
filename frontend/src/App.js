@@ -28,7 +28,7 @@ import Events from './components/app/Events';
 import ConceptNotes from './components/app/ConceptNotes';
 import Resources from './components/app/Resources';
 import Onboarding from './components/app/Onboarding';
-import { canAccessProjectReview } from './lib/projectReview';
+import { canAccessProjectContext } from './lib/projectReview';
 import { getProjectTeamMemberIds } from './lib/projectTeam';
 import { getLinkedPerson } from './lib/roleAccess';
 import './App.css';
@@ -53,10 +53,10 @@ const sectionMeta = {
     description: 'Browse active projects, teams, and shared research records across the programme.',
   },
   review: {
-    label: 'Review',
-    title: 'Review',
+    label: 'Project Context',
+    title: 'Project Context',
     path: '/review',
-    description: 'See where projects may need attention, support, or follow-up.',
+    description: 'See recent project movement, milestones, and visible coordination signals.',
   },
   conceptnotes: {
     label: 'Concept Notes',
@@ -140,9 +140,9 @@ function AppShell() {
     () => getLinkedPerson(permissions, getPerson),
     [getPerson, permissions]
   );
-  const reviewAccess = useMemo(
-    () => canAccessProjectReview(permissions, linkedPerson),
-    [linkedPerson, permissions]
+  const projectContextAccess = useMemo(
+    () => canAccessProjectContext(permissions),
+    [permissions]
   );
   const myProjects = useMemo(() => {
     if (!linkedPerson?.id) return [];
@@ -258,7 +258,7 @@ function AppShell() {
       <Sidebar
         activeSection={activeSection}
         onNavigate={handleNavigate}
-        showReview={reviewAccess}
+        showReview={projectContextAccess}
         collapsed={effectiveSidebarCollapsed}
         mobile={isMobile}
         mobileOpen={mobileNavOpen}
@@ -334,13 +334,13 @@ function AppShell() {
               />
               <Route
                 path="/review"
-                element={reviewAccess
+                element={projectContextAccess
                   ? <Projects mode="review-only" onProjectClick={handleProjectClick} onPersonClick={handlePersonClick} onNavigate={handleNavigate} />
                   : <Navigate to="/projects" replace />}
               />
               <Route path="/publications" element={<Publications />} />
               <Route path="/events" element={<Events onPanelOpen={handleWorkspacePanelOpen} />} />
-              <Route path="/milestones" element={<Navigate to={reviewAccess ? '/review' : '/projects'} replace />} />
+              <Route path="/milestones" element={<Navigate to={projectContextAccess ? '/review' : '/projects'} replace />} />
               <Route path="/concept-notes" element={<ConceptNotes onPanelOpen={handleWorkspacePanelOpen} />} />
               <Route path="/resources" element={<Resources />} />
               <Route path="/rri" element={<Navigate to="/resources" replace />} />
