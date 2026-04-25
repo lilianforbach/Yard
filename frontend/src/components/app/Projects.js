@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, ChevronRight, X, Plus, ExternalLink } from 'lucide-react';
+import { Search, ChevronRight, X, Plus, Maximize2 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -694,7 +694,7 @@ export default function Projects({
               aria-label={`Open full page for ${project.title}`}
             >
               <span className="project-list-open-page-label">Open full page</span>
-              <ExternalLink size={13} aria-hidden="true" />
+              <Maximize2 size={13} aria-hidden="true" />
             </button>
           </div>
         );

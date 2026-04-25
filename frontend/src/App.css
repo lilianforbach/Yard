@@ -2332,6 +2332,7 @@ textarea.editable-field-input { min-height: 4rem; }
 .project-list-row:hover .project-list-open-page,
 .project-list-row:focus-within .project-list-open-page,
 .project-list-row.active .project-list-open-page,
+.view-full-link.project-list-open-page,
 .project-list-open-page:hover,
 .project-list-open-page:focus-visible {
   background: rgba(46, 90, 136, 0.08);
