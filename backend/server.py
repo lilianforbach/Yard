@@ -1129,6 +1129,10 @@ def create_feedback_id() -> str:
     return f"fb-{uuid4().hex}"
 
 
+def create_challenge_id() -> str:
+    return f"ch{uuid4().hex}"
+
+
 def normalize_feedback_base_audience(value: Optional[str]) -> str:
     if value == "lead":
         return "lead"
@@ -1240,6 +1244,26 @@ def build_unique_person_id_by_name(people: List[Dict[str, Any]]) -> Dict[str, st
     return {name: next(iter(person_ids)) for name, person_ids in ids_by_name.items() if len(person_ids) == 1}
 
 
+def resolve_person_reference(
+    value: str,
+    people_by_id: Dict[str, Dict[str, Any]],
+    unique_person_id_by_name: Dict[str, str],
+) -> tuple[Optional[str], Optional[str]]:
+    reference = (value or "").strip()
+    if not reference:
+        return None, None
+
+    person = people_by_id.get(reference)
+    if person:
+        return (person.get("name") or "").strip() or reference, reference
+
+    person_id = unique_person_id_by_name.get(reference)
+    if person_id:
+        return reference, person_id
+
+    return reference, None
+
+
 def normalize_feedback_identity_fields(
     feedback_entries: List[Dict[str, Any]],
     unique_person_id_by_name: Dict[str, str],
@@ -1293,6 +1317,117 @@ async def backfill_project_feedback_identity_fields() -> None:
         if changed:
             await update_fields("projects", "id", project["id"], {"feedback": normalized_feedback})
             logger.info("Migration: normalized feedback identities for project %s", project["id"])
+
+
+def normalize_challenge_identity_fields(
+    challenge_entries: List[Dict[str, Any]],
+    people_by_id: Dict[str, Dict[str, Any]],
+    unique_person_id_by_name: Dict[str, str],
+    seen_ids: Optional[set[str]] = None,
+) -> tuple[List[Dict[str, Any]], bool]:
+    changed = False
+    seen_ids = seen_ids if seen_ids is not None else set()
+    normalized_entries: List[Dict[str, Any]] = []
+
+    for entry in challenge_entries:
+        if not isinstance(entry, dict):
+            normalized_entries.append(entry)
+            continue
+
+        normalized_entry = dict(entry)
+        challenge_id = (normalized_entry.get("id") or "").strip()
+        if not challenge_id or challenge_id in seen_ids:
+            challenge_id = create_challenge_id()
+            normalized_entry["id"] = challenge_id
+            changed = True
+        elif normalized_entry.get("id") != challenge_id:
+            normalized_entry["id"] = challenge_id
+            changed = True
+        seen_ids.add(challenge_id)
+
+        raised_by = (normalized_entry.get("raisedBy") or "").strip()
+        raised_by_id = (normalized_entry.get("raisedById") or "").strip()
+        if raised_by_id:
+            if normalized_entry.get("raisedById") != raised_by_id:
+                normalized_entry["raisedById"] = raised_by_id
+                changed = True
+        else:
+            display_name, inferred_id = resolve_person_reference(
+                raised_by,
+                people_by_id,
+                unique_person_id_by_name,
+            )
+            if inferred_id:
+                normalized_entry["raisedById"] = inferred_id
+                changed = True
+            if display_name and display_name != raised_by:
+                normalized_entry["raisedBy"] = display_name
+                changed = True
+
+        resolved_by = (normalized_entry.get("resolvedBy") or "").strip()
+        resolved_by_id = (normalized_entry.get("resolvedById") or "").strip()
+        if resolved_by_id:
+            if normalized_entry.get("resolvedById") != resolved_by_id:
+                normalized_entry["resolvedById"] = resolved_by_id
+                changed = True
+        else:
+            display_name, inferred_id = resolve_person_reference(
+                resolved_by,
+                people_by_id,
+                unique_person_id_by_name,
+            )
+            if inferred_id:
+                normalized_entry["resolvedById"] = inferred_id
+                changed = True
+            if display_name and display_name != resolved_by:
+                normalized_entry["resolvedBy"] = display_name
+                changed = True
+
+        normalized_entries.append(normalized_entry)
+
+    return normalized_entries, changed
+
+
+async def backfill_project_challenge_identity_fields() -> None:
+    people = await list_collection("people", limit=1000)
+    people_by_id = {
+        (person.get("id") or "").strip(): person
+        for person in people
+        if (person.get("id") or "").strip()
+    }
+    unique_person_id_by_name = build_unique_person_id_by_name(people)
+
+    for project in await list_collection("projects", limit=1000):
+        current_challenges = project.get("currentChallenges") or []
+        resolved_challenges = project.get("resolvedChallenges") or []
+        if not isinstance(current_challenges, list) or not isinstance(resolved_challenges, list):
+            continue
+
+        seen_ids: set[str] = set()
+        normalized_current, current_changed = normalize_challenge_identity_fields(
+            current_challenges,
+            people_by_id,
+            unique_person_id_by_name,
+            seen_ids,
+        )
+        normalized_resolved, resolved_changed = normalize_challenge_identity_fields(
+            resolved_challenges,
+            people_by_id,
+            unique_person_id_by_name,
+            seen_ids,
+        )
+
+        if current_changed or resolved_changed:
+            await update_fields(
+                "projects",
+                "id",
+                project["id"],
+                {
+                    "currentChallenges": normalized_current,
+                    "resolvedChallenges": normalized_resolved,
+                },
+            )
+            logger.info("Migration: normalized challenge identities for project %s", project["id"])
 
 
 def can_access_review_surface(user: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> bool:
@@ -2170,6 +2305,14 @@ class ChallengeCreate(BaseModel):
     date: Optional[str] = None
     publish: Optional[bool] = None
 
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, v: str) -> str:
+        value = (v or "").strip()
+        if not value:
+            raise ValueError("description cannot be empty")
+        return value
+
     @field_validator("severity")
     @classmethod
     def check_severity(cls, v: str) -> str:
@@ -2183,6 +2326,16 @@ class ChallengeEdit(BaseModel):
     description: Optional[str] = None
     severity: Optional[str] = None
     publish: Optional[bool] = None
+
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        value = v.strip()
+        if not value:
+            raise ValueError("description cannot be empty")
+        return value
 
     @model_validator(mode="after")
     def check_at_least_one_field(self) -> "ChallengeEdit":
@@ -3170,13 +3323,15 @@ async def add_project_challenge(
         raise HTTPException(status_code=403, detail="Only the project lead or admin can add challenges")
     publish_now = bool(data.publish)
     challenge_doc = {
-        "id": f"ch{uuid4().hex}",
+        "id": create_challenge_id(),
         "description": data.description,
         "severity": data.severity,
         "raisedBy": linked.get("name") if linked else (user.get("name") or user.get("id")),
         "date": data.date or utc_now().strftime("%Y-%m-%d"),
         "published": publish_now,
     }
+    if linked and linked.get("id"):
+        challenge_doc["raisedById"] = linked["id"]
     if publish_now:
         challenge_doc["lastModified"] = challenge_doc["date"]
     updated_project = await append_to_list_field("projects", "id", project_id, "currentChallenges", challenge_doc)
@@ -3308,10 +3463,10 @@ async def edit_project_feedback(
     return redact_project_feedback_for_viewer(updated, user, linked)
 
 
-@api_router.put("/projects/{project_id}/challenges/{entry_index}")
+@api_router.put("/projects/{project_id}/challenges/{challenge_id}")
 async def edit_project_challenge(
     project_id: str,
-    entry_index: int,
+    challenge_id: str,
     data: ChallengeEdit,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
@@ -3322,8 +3477,17 @@ async def edit_project_challenge(
     if not can_edit_project(user, project, linked):
         raise HTTPException(status_code=403, detail="Only a project lead or admin can edit")
 
+    challenge_id = (challenge_id or "").strip()
     challenges = project.get("currentChallenges") or []
-    if entry_index < 0 or entry_index >= len(challenges):
+    entry_index = next(
+        (
+            index
+            for index, entry in enumerate(challenges)
+            if isinstance(entry, dict) and (entry.get("id") or "").strip() == challenge_id
+        ),
+        -1,
+    )
+    if entry_index < 0:
         raise HTTPException(status_code=404, detail="Challenge not found")
 
     if data.description is not None:
@@ -3338,10 +3502,10 @@ async def edit_project_challenge(
     return updated
 
 
-@api_router.post("/projects/{project_id}/challenges/{entry_index}/resolve")
+@api_router.post("/projects/{project_id}/challenges/{challenge_id}/resolve")
 async def resolve_project_challenge(
     project_id: str,
-    entry_index: int,
+    challenge_id: str,
     data: ChallengeResolve,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
@@ -3352,28 +3516,41 @@ async def resolve_project_challenge(
     if not can_edit_project(user, project, linked):
         raise HTTPException(status_code=403, detail="Only a project lead or admin can edit")
 
+    challenge_id = (challenge_id or "").strip()
     challenges = list(project.get("currentChallenges") or [])
-    if entry_index < 0 or entry_index >= len(challenges):
+    entry_index = next(
+        (
+            index
+            for index, entry in enumerate(challenges)
+            if isinstance(entry, dict) and (entry.get("id") or "").strip() == challenge_id
+        ),
+        -1,
+    )
+    if entry_index < 0:
         raise HTTPException(status_code=404, detail="Challenge not found")
 
     resolved_entry = {**challenges.pop(entry_index)}
     resolved_entry["resolvedDate"] = data.resolvedDate or utc_now().strftime("%Y-%m-%d")
     resolved_entry["resolvedBy"] = linked.get("name") if linked else (user.get("name") or user.get("email"))
+    if linked and linked.get("id"):
+        resolved_entry["resolvedById"] = linked["id"]
     resolved_entry["published"] = resolved_entry.get("published", True)
     if data.resolutionNote:
         resolved_entry["resolutionNote"] = data.resolutionNote
     resolved_entry["lastModified"] = resolved_entry["resolvedDate"]
 
     resolved_challenges = [resolved_entry, *(project.get("resolvedChallenges") or [])]
+    update_payload = {
+        "currentChallenges": challenges,
+        "resolvedChallenges": resolved_challenges,
+    }
+    if is_entry_surfaced(resolved_entry):
+        update_payload["lastModified"] = resolved_entry["resolvedDate"]
     updated = await update_fields(
         "projects",
         "id",
         project_id,
-        {
-            "currentChallenges": challenges,
-            "resolvedChallenges": resolved_challenges,
-            "lastModified": resolved_entry["resolvedDate"],
-        },
+        update_payload,
     )
     return updated
 
@@ -3917,12 +4094,14 @@ async def seed_database() -> None:
         logger.info("No seed file configured; skipping data seed")
         await ensure_indexes()
         await backfill_project_feedback_identity_fields()
+        await backfill_project_challenge_identity_fields()
         return
 
     if not seed_file.exists():
         logger.warning("Configured seed file %s not found, skipping data seed", seed_file)
         await ensure_indexes()
         await backfill_project_feedback_identity_fields()
+        await backfill_project_challenge_identity_fields()
         return
 
     with open(seed_file, "r", encoding="utf-8") as handle:
@@ -3949,6 +4128,7 @@ async def seed_database() -> None:
     # ── One-time migrations ──
     await run_migrations(seed)
     await backfill_project_feedback_identity_fields()
+    await backfill_project_challenge_identity_fields()
 
 
 async def run_migrations(seed: dict) -> None:

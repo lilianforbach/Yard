@@ -464,9 +464,9 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const [challengeForm, setChallengeForm] = useState({ description: '', severity: 'slowing' });
   const [challengeFormError, setChallengeFormError] = useState('');
   const [challengeSubmitting, setChallengeSubmitting] = useState(false);
-  const [editingChallenge, setEditingChallenge] = useState(null); // { origIndex, description, severity }
+  const [editingChallenge, setEditingChallenge] = useState(null); // { id, description, severity }
   const [editingChallengeSubmitting, setEditingChallengeSubmitting] = useState(false);
-  const [resolvingChallenge, setResolvingChallenge] = useState(null); // { origIndex, description, resolutionNote }
+  const [resolvingChallenge, setResolvingChallenge] = useState(null); // { id, description, resolutionNote }
   const [resolvingChallengeSubmitting, setResolvingChallengeSubmitting] = useState(false);
   const [showResolvedChallenges, setShowResolvedChallenges] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState(null); // { id, title, dueDate }
@@ -856,10 +856,15 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
 
   const saveChallengeEdit = useCallback(async (publish = false) => {
     if (!editingChallenge) return;
+    const challengeId = editingChallenge.id;
+    if (!challengeId) {
+      showToast('Challenge cannot be edited until it has been refreshed', 'error');
+      return;
+    }
     setEditingChallengeSubmitting(true);
     try {
-      await api.put(`/projects/${projectId}/challenges/${editingChallenge.origIndex}`, {
-        description: editingChallenge.description,
+      await api.put(`/projects/${projectId}/challenges/${encodeURIComponent(challengeId)}`, {
+        description: editingChallenge.description.trim(),
         severity: normalizeChallengeSeverity(editingChallenge.severity),
         publish,
       });
@@ -876,9 +881,14 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
 
   const handleResolveChallenge = useCallback(async () => {
     if (!resolvingChallenge) return;
+    const challengeId = resolvingChallenge.id;
+    if (!challengeId) {
+      showToast('Challenge cannot be resolved until it has been refreshed', 'error');
+      return;
+    }
     setResolvingChallengeSubmitting(true);
     try {
-      await api.post(`/projects/${projectId}/challenges/${resolvingChallenge.origIndex}/resolve`, {
+      await api.post(`/projects/${projectId}/challenges/${encodeURIComponent(challengeId)}/resolve`, {
         resolutionNote: resolvingChallenge.resolutionNote || '',
       });
       await refreshProjects();
@@ -1026,14 +1036,18 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                           <button
                             className="save-mode-btn quiet"
                             type="button"
-                            onClick={() => setEditingChallenge({ origIndex: i, description: c.description, severity: normalizeChallengeSeverity(c.severity) })}
+                            disabled={!c.id}
+                            title={c.id ? 'Edit' : 'Refresh before editing'}
+                            onClick={() => c.id && setEditingChallenge({ id: c.id, description: c.description, severity: normalizeChallengeSeverity(c.severity) })}
                           >
                             Edit
                           </button>
                           <button
                             className="save-mode-btn publish"
                             type="button"
-                            onClick={() => setResolvingChallenge({ origIndex: i, description: c.description, resolutionNote: '' })}
+                            disabled={!c.id}
+                            title={c.id ? 'Resolve' : 'Refresh before resolving'}
+                            onClick={() => c.id && setResolvingChallenge({ id: c.id, description: c.description, resolutionNote: '' })}
                           >
                             Resolve
                           </button>

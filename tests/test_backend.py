@@ -732,6 +732,140 @@ def test_project_write_permissions_follow_role_rules(client):
     assert programme_manager_feedback.json()["authorId"] == "nkechi"
 
 
+def test_challenge_identity_and_id_based_lifecycle(client, isolated_app):
+    _, data_file = isolated_app
+    register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
+
+    first = client.post(
+        "/api/projects/sousbot/challenges",
+        json={
+            "description": "  First challenge  ",
+            "severity": "slowing",
+            "raisedBy": "",
+            "publish": True,
+        },
+    )
+    second = client.post(
+        "/api/projects/sousbot/challenges",
+        json={
+            "description": "Second challenge",
+            "severity": "slowing",
+            "raisedBy": "",
+            "publish": True,
+        },
+    )
+
+    assert first.status_code == 200
+    assert first.json()["id"].startswith("ch")
+    assert first.json()["description"] == "First challenge"
+    assert first.json()["raisedBy"] == "Dr. Kwame Asante"
+    assert first.json()["raisedById"] == "kwame"
+    assert second.status_code == 200
+
+    first_id = first.json()["id"]
+    second_id = second.json()["id"]
+
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
+    sousbot = next(project for project in payload["projects"] if project["id"] == "sousbot")
+    current = sousbot["currentChallenges"]
+    first_entry = next(entry for entry in current if entry["id"] == first_id)
+    second_entry = next(entry for entry in current if entry["id"] == second_id)
+    sousbot["currentChallenges"] = [second_entry, first_entry]
+    data_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    edited = client.put(
+        f"/api/projects/sousbot/challenges/{first_id}",
+        json={"description": "  Edited first challenge  ", "severity": "blocking", "publish": True},
+    )
+    assert edited.status_code == 200
+    edited_challenges = edited.json()["currentChallenges"]
+    edited_first = next(entry for entry in edited_challenges if entry["id"] == first_id)
+    untouched_second = next(entry for entry in edited_challenges if entry["id"] == second_id)
+    assert edited_first["description"] == "Edited first challenge"
+    assert edited_first["severity"] == "blocking"
+    assert untouched_second["description"] == "Second challenge"
+
+    resolved = client.post(
+        f"/api/projects/sousbot/challenges/{first_id}/resolve",
+        json={"resolutionNote": "Worked through with the team."},
+    )
+    assert resolved.status_code == 200
+    assert all(entry["id"] != first_id for entry in resolved.json()["currentChallenges"])
+    resolved_first = next(entry for entry in resolved.json()["resolvedChallenges"] if entry["id"] == first_id)
+    assert resolved_first["description"] == "Edited first challenge"
+    assert resolved_first["resolvedBy"] == "Dr. Kwame Asante"
+    assert resolved_first["resolvedById"] == "kwame"
+    assert resolved_first["resolutionNote"] == "Worked through with the team."
+
+
+def test_challenge_description_validation(client):
+    register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
+
+    blank_create = client.post(
+        "/api/projects/sousbot/challenges",
+        json={"description": "   ", "severity": "slowing", "raisedBy": "", "publish": True},
+    )
+    invalid_severity = client.post(
+        "/api/projects/sousbot/challenges",
+        json={"description": "Needs a known severity", "severity": "critical", "raisedBy": "", "publish": True},
+    )
+    valid = client.post(
+        "/api/projects/sousbot/challenges",
+        json={"description": "Valid challenge", "severity": "slowing", "raisedBy": "", "publish": True},
+    )
+    blank_edit = client.put(
+        f"/api/projects/sousbot/challenges/{valid.json()['id']}",
+        json={"description": "   "},
+    )
+
+    assert blank_create.status_code == 422
+    assert invalid_severity.status_code == 422
+    assert valid.status_code == 200
+    assert blank_edit.status_code == 422
+
+
+def test_quiet_challenge_stays_out_of_shared_attention(client):
+    register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
+
+    created = client.post(
+        "/api/projects/sousbot/challenges",
+        json={
+            "description": "Quiet project-local challenge",
+            "severity": "slowing",
+            "raisedBy": "",
+            "publish": False,
+        },
+    )
+    assert created.status_code == 200
+    challenge_id = created.json()["id"]
+    assert created.json()["published"] is False
+
+    project = client.get("/api/projects/sousbot")
+    assert project.status_code == 200
+    assert any(entry["id"] == challenge_id for entry in project.json()["currentChallenges"])
+    project_last_modified_before_resolve = project.json().get("lastModified")
+
+    stats = client.get("/api/dashboard/stats")
+    activity = client.get("/api/dashboard/activity")
+    assert stats.status_code == 200
+    assert activity.status_code == 200
+    assert stats.json()["openChallenges"] == 0
+    assert all(entry.get("title") != "Quiet project-local challenge" for entry in activity.json())
+
+    resolved = client.post(
+        f"/api/projects/sousbot/challenges/{challenge_id}/resolve",
+        json={"resolutionNote": "Handled locally."},
+    )
+    assert resolved.status_code == 200
+    assert resolved.json().get("lastModified") == project_last_modified_before_resolve
+    resolved_entry = next(entry for entry in resolved.json()["resolvedChallenges"] if entry["id"] == challenge_id)
+    assert resolved_entry["published"] is False
+
+    activity_after_resolve = client.get("/api/dashboard/activity")
+    assert activity_after_resolve.status_code == 200
+    assert all(entry.get("title") != "Quiet project-local challenge" for entry in activity_after_resolve.json())
+
+
 def test_feedback_edit_is_limited_to_author_or_admin(client):
     register_and_login(client, "k.yamamoto@lakemere.ac.uk", "Prof. Kenji Yamamoto")
     created = client.post(
@@ -948,6 +1082,63 @@ def test_feedback_identity_backfill_handles_legacy_entries(isolated_app):
         assert project.status_code == 200
         restarted_entry = next(entry for entry in project.json()["feedback"] if entry["title"] == "Legacy feedback")
         assert restarted_entry["id"] == backfilled_id
+
+
+def test_challenge_identity_backfill_handles_legacy_entries(isolated_app):
+    app, data_file = isolated_app
+
+    with TestClient(app):
+        pass
+
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
+    sousbot = next(project for project in payload["projects"] if project["id"] == "sousbot")
+    sousbot["currentChallenges"].append(
+        {
+            "description": "Legacy active challenge",
+            "severity": "minor",
+            "raisedBy": "kwame",
+            "published": True,
+            "date": "2026-03-01",
+        }
+    )
+    sousbot["resolvedChallenges"].append(
+        {
+            "description": "Legacy resolved challenge",
+            "severity": "slowing",
+            "raisedBy": "kwame",
+            "resolvedBy": "kwame",
+            "published": True,
+            "date": "2026-02-01",
+            "resolvedDate": "2026-02-15",
+        }
+    )
+    data_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    with TestClient(app) as second_client:
+        login(second_client)
+        project = second_client.get("/api/projects/sousbot")
+        assert project.status_code == 200
+        active = next(entry for entry in project.json()["currentChallenges"] if entry["description"] == "Legacy active challenge")
+        resolved = next(entry for entry in project.json()["resolvedChallenges"] if entry["description"] == "Legacy resolved challenge")
+        assert active["id"].startswith("ch")
+        assert active["raisedBy"] == "Dr. Kwame Asante"
+        assert active["raisedById"] == "kwame"
+        assert resolved["id"].startswith("ch")
+        assert resolved["raisedBy"] == "Dr. Kwame Asante"
+        assert resolved["raisedById"] == "kwame"
+        assert resolved["resolvedBy"] == "Dr. Kwame Asante"
+        assert resolved["resolvedById"] == "kwame"
+        active_id = active["id"]
+        resolved_id = resolved["id"]
+
+    with TestClient(app) as third_client:
+        login(third_client)
+        project = third_client.get("/api/projects/sousbot")
+        assert project.status_code == 200
+        active = next(entry for entry in project.json()["currentChallenges"] if entry["description"] == "Legacy active challenge")
+        resolved = next(entry for entry in project.json()["resolvedChallenges"] if entry["description"] == "Legacy resolved challenge")
+        assert active["id"] == active_id
+        assert resolved["id"] == resolved_id
 
 
 def test_milestone_permissions_follow_project_lead(client):
