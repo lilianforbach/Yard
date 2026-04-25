@@ -373,8 +373,6 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
   );
 
   const currentChallenges = useMemo(() => {
-    const severityRank = { blocking: 0, slowing: 1 };
-
     return projects
       .map((project) => {
         const visibleChallenges = (project.currentChallenges || [])
@@ -384,8 +382,6 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
             severity: challenge.severity === 'minor' ? 'slowing' : challenge.severity,
           }))
           .sort((a, b) => {
-            const severityDiff = (severityRank[a.severity] ?? 99) - (severityRank[b.severity] ?? 99);
-            if (severityDiff !== 0) return severityDiff;
             return (b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '');
           });
 
@@ -398,10 +394,10 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         return {
           key: project.id,
           title: getProjectShortName(project.title),
-          meta: visibleChallenges.length === 1 ? `${severityLabel} challenge` : `${visibleChallenges.length} active challenges`,
-          metaSecondary: primaryDate
-            ? `${primaryChallenge.description} • ${formatDate(primaryDate)}`
-            : primaryChallenge.description,
+          meta: primaryDate
+            ? `${formatDate(primaryDate)} • ${visibleChallenges.length === 1 ? `${severityLabel} challenge` : `${visibleChallenges.length} active challenges`}`
+            : visibleChallenges.length === 1 ? `${severityLabel} challenge` : `${visibleChallenges.length} active challenges`,
+          metaSecondary: primaryChallenge.description,
           severity: primaryChallenge.severity,
           sortDate: primaryDate,
           onClick: () => onProjectClick(project.id),
@@ -409,8 +405,6 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
       })
       .filter(Boolean)
       .sort((a, b) => {
-        const severityDiff = (severityRank[a.severity] ?? 99) - (severityRank[b.severity] ?? 99);
-        if (severityDiff !== 0) return severityDiff;
         return (b.sortDate || '').localeCompare(a.sortDate || '');
       });
   }, [onProjectClick, projects]);
@@ -425,10 +419,20 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         const latestSignal = latestSignals[0] || null;
         const frontstageState = getConceptNoteFrontstageState(note);
         const progressSummary = latestSignal ? getConceptNoteProgressSummary(latestSignal, getProject) : null;
+        const sortDate = getConceptNoteSortDate(note);
+        const dateLabel = latestSignal?.date && latestSignal.date === sortDate
+          ? `Progressed ${formatDate(sortDate)}`
+          : note.updatedAt && note.updatedAt === sortDate
+            ? `Updated ${formatDate(sortDate)}`
+            : note.createdAt && note.createdAt === sortDate
+              ? `Created ${formatDate(sortDate)}`
+              : sortDate
+                ? `Updated ${formatDate(sortDate)}`
+                : '';
         return {
           key: note.id,
           title: note.title,
-          meta: contributorLabel,
+          meta: [dateLabel, contributorLabel].filter(Boolean).join(' • '),
           metaSecondary: frontstageState === 'progressed'
             ? progressSummary?.label || 'Progressed'
             : reviewAccess && note.activeUntil
