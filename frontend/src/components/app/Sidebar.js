@@ -90,9 +90,40 @@ export default function Sidebar({
         )}
       </button>
       <div className="sidebar-footer">
+        {!collapsed && userEmail && (
+          <div className="sidebar-user">
+            <span className="sidebar-user-email" data-testid="user-email">{linkedPerson?.name || userEmail}</span>
+            {linkedPerson?.name && <span className="sidebar-user-email secondary">{userEmail}</span>}
+          </div>
+        )}
+        {linkedPerson?.id && (
+          <div className="sidebar-shortcuts" aria-label="Personal shortcuts">
+            <button
+              type="button"
+              data-testid="my-profile-shortcut"
+              className="sidebar-shortcut-btn"
+              onClick={onOpenMyProfile}
+              title="My Profile"
+              aria-label="Open My Profile"
+            >
+              <UserRound size={16} />
+              {!collapsed && <span>My Profile</span>}
+            </button>
+            <button
+              type="button"
+              data-testid="my-projects-shortcut"
+              className="sidebar-shortcut-btn"
+              onClick={onOpenMyProjects}
+              title="My Projects"
+              aria-label={`Open My Projects${myProjectsCount ? `, ${myProjectsCount} linked` : ''}`}
+            >
+              <FolderOpen size={16} />
+              {!collapsed && <span>My Projects</span>}
+            </button>
+          </div>
+        )}
         {!collapsed && (
           <div className="theme-switch">
-            <span className="theme-switch-label">Appearance</span>
             <div className="theme-switch-group" role="group" aria-label="Theme">
               <button
                 type="button"
@@ -126,39 +157,6 @@ export default function Sidebar({
             {activeTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         )}
-        {!collapsed && userEmail && (
-          <div className="sidebar-user">
-            <span className="sidebar-user-label">Signed in as</span>
-            <span className="sidebar-user-email" data-testid="user-email">{linkedPerson?.name || userEmail}</span>
-            {linkedPerson?.name && <span className="sidebar-user-email secondary">{userEmail}</span>}
-          </div>
-        )}
-        {linkedPerson?.id && (
-          <div className="sidebar-shortcuts" aria-label="Personal shortcuts">
-            <button
-              type="button"
-              data-testid="my-profile-shortcut"
-              className="sidebar-shortcut-btn"
-              onClick={onOpenMyProfile}
-              title="My Profile"
-              aria-label="Open My Profile"
-            >
-              <UserRound size={16} />
-              {!collapsed && <span>My Profile</span>}
-            </button>
-            <button
-              type="button"
-              data-testid="my-projects-shortcut"
-              className="sidebar-shortcut-btn"
-              onClick={onOpenMyProjects}
-              title="My Projects"
-              aria-label={`Open My Projects${myProjectsCount ? `, ${myProjectsCount} linked` : ''}`}
-            >
-              <FolderOpen size={16} />
-              {!collapsed && <span>My Projects</span>}
-            </button>
-          </div>
-        )}
         {!collapsed && (
           <button data-testid="logout-button" className="logout-btn" onClick={logout}>
             <LogOut size={16} />
@@ -169,11 +167,6 @@ export default function Sidebar({
           <button data-testid="logout-button-collapsed" className="logout-btn" onClick={logout} title="Sign Out">
             <LogOut size={16} />
           </button>
-        )}
-        {!collapsed && (
-          <p className="sidebar-footer-text">
-            Yard • Research programme workspace
-          </p>
         )}
       </div>
     </aside>
