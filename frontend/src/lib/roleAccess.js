@@ -65,6 +65,7 @@ export function getProjectSurfaceAccess({ permissions, linkedPerson, project }) 
   const leadId = getProjectLeadId(project) || null;
   const linkedId = linkedPerson?.id || null;
   const feedbackAuthorName = linkedPerson?.name || '';
+  const feedbackAuthorId = linkedPerson?.id || '';
 
   const isAdmin = Boolean(permissions?.isAdmin);
   const isProjectMember = Boolean(linkedId && projectMemberIds.includes(linkedId));
@@ -76,6 +77,11 @@ export function getProjectSurfaceAccess({ permissions, linkedPerson, project }) 
   const canManageProjectContent = isAdmin || isLead;
   const canViewPrivateFeedback = isAdmin || isProjectMember;
   const canAddFeedback = Boolean(hasReviewAccess && !isLead);
+  const isFeedbackAuthor = (entry) => {
+    if (!entry) return false;
+    if (entry.authorId) return Boolean(feedbackAuthorId && entry.authorId === feedbackAuthorId);
+    return Boolean(feedbackAuthorName && entry.author === feedbackAuthorName);
+  };
 
   return {
     linkedPerson,
@@ -93,10 +99,11 @@ export function getProjectSurfaceAccess({ permissions, linkedPerson, project }) 
     canViewPrivateFeedback,
     canAccessReview: hasReviewAccess,
     canAccessMaintenance: canAccessMaintenance(permissions),
+    isFeedbackAuthor,
     canViewFeedbackEntry(entry) {
       if (!entry) return false;
       if (isAdmin) return true;
-      if (feedbackAuthorName && entry.author === feedbackAuthorName) return true;
+      if (isFeedbackAuthor(entry)) return true;
 
       const { baseAudience, includeReviewers } = getFeedbackAudienceState(entry);
       if (includeReviewers && hasReviewAccess) return true;
@@ -108,7 +115,7 @@ export function getProjectSurfaceAccess({ permissions, linkedPerson, project }) 
       if (entry.entryType === 'updates') return isAdmin || isLead;
       if (entry.entryType === 'feedback') {
         if (isAdmin) return true;
-        return Boolean(canAddFeedback && feedbackAuthorName && entry.author === feedbackAuthorName);
+        return Boolean(canAddFeedback && isFeedbackAuthor(entry));
       }
       return false;
     },

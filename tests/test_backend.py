@@ -700,7 +700,9 @@ def test_project_write_permissions_follow_role_rules(client):
     )
 
     assert pi_feedback.status_code == 200
+    assert pi_feedback.json()["id"].startswith("fb-")
     assert pi_feedback.json()["author"] == "Prof. Kenji Yamamoto"
+    assert pi_feedback.json()["authorId"] == "kenji"
     assert pi_update.status_code == 403
 
     register_and_login(client, "a.osei@thornbridge.ac.uk", "Prof. Amara Osei")
@@ -717,6 +719,7 @@ def test_project_write_permissions_follow_role_rules(client):
 
     assert unrelated_pi_feedback.status_code == 200
     assert unrelated_pi_feedback.json()["author"] == "Prof. Amara Osei"
+    assert unrelated_pi_feedback.json()["authorId"] == "amara"
 
     register_and_login(client, "n.adeyemi@thornbridge.ac.uk", "Nkechi Adeyemi")
     programme_manager_feedback = client.post(
@@ -726,6 +729,7 @@ def test_project_write_permissions_follow_role_rules(client):
 
     assert programme_manager_feedback.status_code == 200
     assert programme_manager_feedback.json()["author"] == "Nkechi Adeyemi"
+    assert programme_manager_feedback.json()["authorId"] == "nkechi"
 
 
 def test_feedback_edit_is_limited_to_author_or_admin(client):
@@ -735,28 +739,102 @@ def test_feedback_edit_is_limited_to_author_or_admin(client):
         json={"title": "Original feedback", "content": "Only the author should edit this", "author": ""},
     )
     assert created.status_code == 200
+    feedback_id = created.json()["id"]
 
     register_and_login(client, "e.whitfield@thornbridge.ac.uk", "Prof. Eleanor Whitfield")
     other_pi_edit = client.put(
-        "/api/projects/sousbot/feedback/0",
+        f"/api/projects/sousbot/feedback/{feedback_id}",
         json={"content": "Trying to edit someone else's feedback"},
     )
     assert other_pi_edit.status_code == 403
 
     register_and_login(client, "n.adeyemi@thornbridge.ac.uk", "Nkechi Adeyemi")
     programme_manager_edit = client.put(
-        "/api/projects/sousbot/feedback/0",
+        f"/api/projects/sousbot/feedback/{feedback_id}",
         json={"content": "The programme manager can edit feedback entries"},
     )
     assert programme_manager_edit.status_code == 403
 
     login(client)
     admin_edit = client.put(
-        "/api/projects/sousbot/feedback/0",
+        f"/api/projects/sousbot/feedback/{feedback_id}",
         json={"content": "Admins can edit feedback entries"},
     )
     assert admin_edit.status_code == 200
-    assert admin_edit.json()["feedback"][0]["content"] == "Admins can edit feedback entries"
+    edited_entry = next(entry for entry in admin_edit.json()["feedback"] if entry["id"] == feedback_id)
+    assert edited_entry["content"] == "Admins can edit feedback entries"
+
+
+def test_feedback_edit_uses_stable_id_when_hidden_entries_precede_visible_entry(client):
+    register_and_login(client, "k.yamamoto@lakemere.ac.uk", "Prof. Kenji Yamamoto")
+    visible = client.post(
+        "/api/projects/sousbot/feedback",
+        json={"title": "Kenji team feedback", "content": "Visible feedback to edit", "author": "", "audience": "team", "includeReviewers": False},
+    )
+    assert visible.status_code == 200
+    visible_id = visible.json()["id"]
+
+    register_and_login(client, "a.osei@thornbridge.ac.uk", "Prof. Amara Osei")
+    hidden = client.post(
+        "/api/projects/sousbot/feedback",
+        json={"title": "Hidden lead-only feedback", "content": "Kenji should not see this", "author": "", "audience": "lead", "includeReviewers": False},
+    )
+    assert hidden.status_code == 200
+    hidden_id = hidden.json()["id"]
+
+    login_as(client, "k.yamamoto@lakemere.ac.uk")
+    visible_project = client.get("/api/projects/sousbot")
+    assert visible_project.status_code == 200
+    visible_titles = [entry["title"] for entry in visible_project.json()["feedback"]]
+    assert "Kenji team feedback" in visible_titles
+    assert "Hidden lead-only feedback" not in visible_titles
+
+    edit = client.put(
+        f"/api/projects/sousbot/feedback/{visible_id}",
+        json={"content": "Edited by stable feedback id"},
+    )
+    assert edit.status_code == 200
+    response_titles = [entry["title"] for entry in edit.json()["feedback"]]
+    assert "Hidden lead-only feedback" not in response_titles
+    edited_visible = next(entry for entry in edit.json()["feedback"] if entry["id"] == visible_id)
+    assert edited_visible["content"] == "Edited by stable feedback id"
+
+    login(client)
+    admin_project = client.get("/api/projects/sousbot")
+    assert admin_project.status_code == 200
+    all_feedback = admin_project.json()["feedback"]
+    assert next(entry for entry in all_feedback if entry["id"] == visible_id)["content"] == "Edited by stable feedback id"
+    assert next(entry for entry in all_feedback if entry["id"] == hidden_id)["content"] == "Kenji should not see this"
+
+
+def test_feedback_author_id_survives_person_display_name_change(client):
+    register_and_login(client, "k.yamamoto@lakemere.ac.uk", "Prof. Kenji Yamamoto")
+    created = client.post(
+        "/api/projects/sousbot/feedback",
+        json={"title": "Identity-stable feedback", "content": "Before rename", "author": ""},
+    )
+    assert created.status_code == 200
+    feedback_id = created.json()["id"]
+    assert created.json()["author"] == "Prof. Kenji Yamamoto"
+    assert created.json()["authorId"] == "kenji"
+
+    login(client)
+    rename = client.put(
+        "/api/people/kenji",
+        json={"name": "Prof. Kenji Yamamoto-Sato"},
+    )
+    assert rename.status_code == 200
+
+    login_as(client, "k.yamamoto@lakemere.ac.uk")
+    edit = client.put(
+        f"/api/projects/sousbot/feedback/{feedback_id}",
+        json={"content": "After rename"},
+    )
+    assert edit.status_code == 200
+    edited = next(entry for entry in edit.json()["feedback"] if entry["id"] == feedback_id)
+    assert edited["content"] == "After rename"
+    assert edited["author"] == "Prof. Kenji Yamamoto"
+    assert edited["authorId"] == "kenji"
 
 
 def test_feedback_visibility_respects_audience_scopes(client):
@@ -827,6 +905,49 @@ def test_feedback_visibility_respects_audience_scopes(client):
     assert "Team feedback" not in programme_manager_titles
     assert "Review feedback" in programme_manager_titles
     assert "Lead plus reviewers" in programme_manager_titles
+
+
+def test_feedback_identity_backfill_handles_legacy_entries(isolated_app):
+    app, data_file = isolated_app
+
+    with TestClient(app) as first_client:
+        register_and_login(first_client, "a.osei@thornbridge.ac.uk", "Prof. Amara Osei")
+        created = first_client.post(
+            "/api/projects/sousbot/feedback",
+            json={"title": "Legacy feedback", "content": "Created before fields are stripped", "author": ""},
+        )
+        assert created.status_code == 200
+
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
+    sousbot = next(project for project in payload["projects"] if project["id"] == "sousbot")
+    legacy_entry = next(entry for entry in sousbot["feedback"] if entry["title"] == "Legacy feedback")
+    legacy_entry.pop("id", None)
+    legacy_entry.pop("authorId", None)
+    data_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    with TestClient(app) as second_client:
+        login_as(second_client, "a.osei@thornbridge.ac.uk")
+        project = second_client.get("/api/projects/sousbot")
+        assert project.status_code == 200
+        backfilled_entry = next(entry for entry in project.json()["feedback"] if entry["title"] == "Legacy feedback")
+        assert backfilled_entry["id"].startswith("fb-")
+        assert backfilled_entry["authorId"] == "amara"
+
+        edit = second_client.put(
+            f"/api/projects/sousbot/feedback/{backfilled_entry['id']}",
+            json={"content": "Edited after backfill"},
+        )
+        assert edit.status_code == 200
+        edited_entry = next(entry for entry in edit.json()["feedback"] if entry["id"] == backfilled_entry["id"])
+        assert edited_entry["content"] == "Edited after backfill"
+        backfilled_id = backfilled_entry["id"]
+
+    with TestClient(app) as third_client:
+        login_as(third_client, "a.osei@thornbridge.ac.uk")
+        project = third_client.get("/api/projects/sousbot")
+        assert project.status_code == 200
+        restarted_entry = next(entry for entry in project.json()["feedback"] if entry["title"] == "Legacy feedback")
+        assert restarted_entry["id"] == backfilled_id
 
 
 def test_milestone_permissions_follow_project_lead(client):

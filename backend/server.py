@@ -1125,6 +1125,10 @@ VALID_FEEDBACK_AUDIENCES = {"lead", "team", "review"}
 VALID_FEEDBACK_BASE_AUDIENCES = {"lead", "team"}
 
 
+def create_feedback_id() -> str:
+    return f"fb-{uuid4().hex}"
+
+
 def normalize_feedback_base_audience(value: Optional[str]) -> str:
     if value == "lead":
         return "lead"
@@ -1140,6 +1144,22 @@ def normalize_feedback_include_reviewers(
     return audience == "review"
 
 
+def is_feedback_author(
+    feedback_entry: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]],
+) -> bool:
+    if linked_person is None:
+        return False
+
+    linked_person_id = (linked_person.get("id") or "").strip()
+    entry_author_id = (feedback_entry.get("authorId") or "").strip()
+    if entry_author_id:
+        return bool(linked_person_id and entry_author_id == linked_person_id)
+
+    author_name = (feedback_entry.get("author") or "").strip()
+    return bool(author_name and author_name == (linked_person.get("name") or "").strip())
+
+
 def can_view_feedback_entry(
     user: Dict[str, Any],
     project: Dict[str, Any],
@@ -1151,8 +1171,7 @@ def can_view_feedback_entry(
     if linked_person is None:
         return False
 
-    author_name = (feedback_entry.get("author") or "").strip()
-    if author_name and author_name == (linked_person.get("name") or "").strip():
+    if is_feedback_author(feedback_entry, linked_person):
         return True
 
     audience = normalize_feedback_base_audience(feedback_entry.get("audience"))
@@ -1205,9 +1224,75 @@ def can_edit_feedback_entry(
         return True
     if linked_person is None:
         return False
-    if feedback_entry.get("author") != linked_person.get("name"):
+    if not is_feedback_author(feedback_entry, linked_person):
         return False
     return can_add_project_feedback(user, project, linked_person)
+
+
+def build_unique_person_id_by_name(people: List[Dict[str, Any]]) -> Dict[str, str]:
+    ids_by_name: Dict[str, set[str]] = {}
+    for person in people:
+        name = (person.get("name") or "").strip()
+        person_id = (person.get("id") or "").strip()
+        if not name or not person_id:
+            continue
+        ids_by_name.setdefault(name, set()).add(person_id)
+    return {name: next(iter(person_ids)) for name, person_ids in ids_by_name.items() if len(person_ids) == 1}
+
+
+def normalize_feedback_identity_fields(
+    feedback_entries: List[Dict[str, Any]],
+    unique_person_id_by_name: Dict[str, str],
+) -> tuple[List[Dict[str, Any]], bool]:
+    changed = False
+    seen_ids: set[str] = set()
+    normalized_entries: List[Dict[str, Any]] = []
+
+    for entry in feedback_entries:
+        if not isinstance(entry, dict):
+            normalized_entries.append(entry)
+            continue
+
+        normalized_entry = dict(entry)
+        feedback_id = (normalized_entry.get("id") or "").strip()
+        if not feedback_id or feedback_id in seen_ids:
+            feedback_id = create_feedback_id()
+            normalized_entry["id"] = feedback_id
+            changed = True
+        elif normalized_entry.get("id") != feedback_id:
+            normalized_entry["id"] = feedback_id
+            changed = True
+        seen_ids.add(feedback_id)
+
+        author_id = (normalized_entry.get("authorId") or "").strip()
+        if author_id:
+            if normalized_entry.get("authorId") != author_id:
+                normalized_entry["authorId"] = author_id
+                changed = True
+        else:
+            inferred_author_id = unique_person_id_by_name.get((normalized_entry.get("author") or "").strip())
+            if inferred_author_id:
+                normalized_entry["authorId"] = inferred_author_id
+                changed = True
+
+        normalized_entries.append(normalized_entry)
+
+    return normalized_entries, changed
+
+
+async def backfill_project_feedback_identity_fields() -> None:
+    people = await list_collection("people", limit=1000)
+    unique_person_id_by_name = build_unique_person_id_by_name(people)
+
+    for project in await list_collection("projects", limit=1000):
+        feedback_entries = project.get("feedback") or []
+        if not isinstance(feedback_entries, list):
+            continue
+
+        normalized_feedback, changed = normalize_feedback_identity_fields(feedback_entries, unique_person_id_by_name)
+        if changed:
+            await update_fields("projects", "id", project["id"], {"feedback": normalized_feedback})
+            logger.info("Migration: normalized feedback identities for project %s", project["id"])
 
 
 def can_access_review_surface(user: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> bool:
@@ -3055,6 +3140,7 @@ async def add_project_feedback(
         raise HTTPException(status_code=403, detail="Only users with review access who are not the project lead can add feedback")
     entry_date = data.date or utc_now().strftime("%Y-%m-%d")
     feedback_doc = {
+        "id": create_feedback_id(),
         "title": (data.title or "").strip(),
         "content": data.content,
         "author": linked.get("name") if linked else (user.get("name") or user.get("email")),
@@ -3064,6 +3150,8 @@ async def add_project_feedback(
         "published": False,
         "lastModified": entry_date,
     }
+    if linked and linked.get("id"):
+        feedback_doc["authorId"] = linked["id"]
     updated_project = await append_to_list_field("projects", "id", project_id, "feedback", feedback_doc, prepend=True)
     return feedback_doc
 
@@ -3173,10 +3261,10 @@ async def edit_project_update(
     return updated
 
 
-@api_router.put("/projects/{project_id}/feedback/{entry_index}")
+@api_router.put("/projects/{project_id}/feedback/{feedback_id}")
 async def edit_project_feedback(
     project_id: str,
-    entry_index: int,
+    feedback_id: str,
     data: EntryEdit,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
@@ -3184,8 +3272,17 @@ async def edit_project_feedback(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     linked = await get_linked_person(user)
+    feedback_id = (feedback_id or "").strip()
     feedback = project.get("feedback") or []
-    if entry_index < 0 or entry_index >= len(feedback):
+    entry_index = next(
+        (
+            index
+            for index, entry in enumerate(feedback)
+            if isinstance(entry, dict) and (entry.get("id") or "").strip() == feedback_id
+        ),
+        -1,
+    )
+    if entry_index < 0:
         raise HTTPException(status_code=404, detail="Feedback entry not found")
     if not can_edit_feedback_entry(user, project, linked, feedback[entry_index]):
         raise HTTPException(status_code=403, detail="Only the feedback author or an admin can edit")
@@ -3206,7 +3303,9 @@ async def edit_project_feedback(
     feedback[entry_index]["published"] = False
     feedback[entry_index]["lastModified"] = utc_now().strftime("%Y-%m-%d")
     updated = await update_fields("projects", "id", project_id, {"feedback": feedback})
-    return updated
+    if not updated:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return redact_project_feedback_for_viewer(updated, user, linked)
 
 
 @api_router.put("/projects/{project_id}/challenges/{entry_index}")
@@ -3817,11 +3916,13 @@ async def seed_database() -> None:
     if seed_file is None:
         logger.info("No seed file configured; skipping data seed")
         await ensure_indexes()
+        await backfill_project_feedback_identity_fields()
         return
 
     if not seed_file.exists():
         logger.warning("Configured seed file %s not found, skipping data seed", seed_file)
         await ensure_indexes()
+        await backfill_project_feedback_identity_fields()
         return
 
     with open(seed_file, "r", encoding="utf-8") as handle:
@@ -3847,6 +3948,7 @@ async def seed_database() -> None:
 
     # ── One-time migrations ──
     await run_migrations(seed)
+    await backfill_project_feedback_identity_fields()
 
 
 async def run_migrations(seed: dict) -> None:

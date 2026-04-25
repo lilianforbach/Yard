@@ -456,7 +456,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const [projectSvgDrafts, setProjectSvgDrafts] = useState([]);
   const [projectSlidesSaving, setProjectSlidesSaving] = useState(false);
   const [svgUploading, setSvgUploading] = useState(false);
-  const [editingEntry, setEditingEntry] = useState(null); // { type, origIndex, title, content }
+  const [editingEntry, setEditingEntry] = useState(null); // updates use origIndex; feedback uses id
   const [editingEntrySubmitting, setEditingEntrySubmitting] = useState(false);
   const [editingEntrySubmitMode, setEditingEntrySubmitMode] = useState('');
   const editingEntrySubmittingRef = useRef(false);
@@ -483,11 +483,15 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
 
   const saveEntryEdit = useCallback(async (publish = false) => {
     if (!editingEntry || editingEntrySubmittingRef.current) return;
-    const { type, origIndex, title, content, slidesUrl, svgUrls, baseAudience, includeReviewers } = editingEntry;
+    const { type, id, origIndex, title, content, slidesUrl, svgUrls, baseAudience, includeReviewers } = editingEntry;
     const trimmedTitle = (title || '').trim();
     const trimmedContent = (content || '').trim();
     if (type === 'feedback' && !trimmedContent) return;
     if (!trimmedTitle && !trimmedContent) return;
+    if (type === 'feedback' && !id) {
+      showToast('This feedback entry needs to be refreshed before it can be edited', 'error');
+      return;
+    }
     const submitMode = type === 'feedback' ? 'feedback' : (publish ? 'publish' : 'quiet');
     editingEntrySubmittingRef.current = true;
     setEditingEntrySubmitting(true);
@@ -501,7 +505,8 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
         payload.audience = normalizeFeedbackBaseAudience(baseAudience);
         payload.includeReviewers = Boolean(includeReviewers);
       }
-      await api.put(`/projects/${projectId}/${type}/${origIndex}`, payload);
+      const entryTarget = type === 'feedback' ? id : origIndex;
+      await api.put(`/projects/${projectId}/${type}/${entryTarget}`, payload);
       await refreshProjects();
       setEditingEntry(null);
       showToast(type === 'feedback' ? 'Feedback saved' : (publish ? 'Entry published' : 'Entry saved quietly'));
@@ -914,8 +919,10 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
 
   const editingEntryHasContent = Boolean((editingEntry?.title || '').trim() || (editingEntry?.content || '').trim());
   const editingFeedbackHasContent = Boolean((editingEntry?.content || '').trim());
+  const editingFeedbackMissingId = Boolean(editingEntry?.type === 'feedback' && !editingEntry?.id);
   const editingEntrySaveDisabled = editingEntrySubmitting
     || svgUploading
+    || editingFeedbackMissingId
     || (editingEntry?.type === 'feedback' ? !editingFeedbackHasContent : !editingEntryHasContent);
   const closeEditingEntry = () => {
     if (editingEntrySubmitting) return;
@@ -936,7 +943,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const currentChallenges = project.currentChallenges || [];
   const resolvedChallenges = project.resolvedChallenges || [];
   const feedbackEntries = (project.feedback || [])
-    .map((f, idx) => ({ ...f, entryType: 'feedback', origIndex: idx }))
+    .map((f) => ({ ...f, entryType: 'feedback' }))
     .filter((entry) => access.canViewFeedbackEntry(entry));
   const progressEntries = [
     ...(project.updates || []).map((u, idx) => ({ ...u, entryType: 'updates', origIndex: idx })),
@@ -1340,8 +1347,9 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
             <div className="progress-catalogue-list">
               {visibleProgressEntries
                 .map((entry, i) => {
+                  const canEditEntry = access.canEditProjectEntry(entry) && (entry.entryType !== 'feedback' || Boolean(entry.id));
                   return (
-                    <div key={i} className={`update-item ${entry.entryType === 'feedback' ? 'feedback-item' : ''} ${expandedUpdates[i] ? 'expanded' : ''}`}>
+                    <div key={`${entry.entryType}-${entry.id || entry.origIndex || i}`} className={`update-item ${entry.entryType === 'feedback' ? 'feedback-item' : ''} ${expandedUpdates[i] ? 'expanded' : ''}`}>
                       <div className="update-header" onClick={() => setExpandedUpdates(prev => ({ ...prev, [i]: !prev[i] }))}>
                         <div className="update-row-grid">
                           <div className="update-title">{entry.entryType === 'feedback' ? getFeedbackDisplayTitle(entry) : entry.title}</div>
@@ -1351,21 +1359,22 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                           <div className="update-date-cell">
                             <span className="update-meta-date">{formatDate(entry.lastModified || entry.date)}</span>
                             <div className="update-header-right">
-                              {access.canEditProjectEntry(entry) && (
+                              {canEditEntry && (
                                 <button
                                   className="entry-edit-btn"
                                   onClick={e => {
                                     e.stopPropagation();
                                     setEditingEntry({
                                       type: entry.entryType,
-                                    origIndex: entry.origIndex,
-                                    title: entry.title,
-                                    content: entry.content,
-                                    author: entry.author,
-                                    ...getFeedbackAudienceState(entry),
-                                    slidesUrl: entry.slidesUrl || '',
-                                    svgUrls: getSvgUrls(entry),
-                                  });
+                                      id: entry.id,
+                                      origIndex: entry.origIndex,
+                                      title: entry.title,
+                                      content: entry.content,
+                                      author: entry.author,
+                                      ...getFeedbackAudienceState(entry),
+                                      slidesUrl: entry.slidesUrl || '',
+                                      svgUrls: getSvgUrls(entry),
+                                    });
                                   }}
                                   title="Edit"
                                 >
