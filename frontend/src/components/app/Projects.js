@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, ChevronRight, X, Plus } from 'lucide-react';
+import { Search, ChevronRight, X, Plus, ExternalLink } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -292,6 +292,10 @@ export default function Projects({
         ? 'mine'
       : 'overview';
   const selectedProjectId = searchParams.get('project');
+
+  const openFullProjectPage = (projectId) => {
+    navigate(`/projects/${projectId}`);
+  };
 
   const setView = (nextView) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -659,14 +663,17 @@ export default function Projects({
         const isActive = selectedProjectId === project.id;
 
         return (
-          <button
+          <div
             key={project.id}
-            type="button"
             data-testid={`project-card-${project.id}`}
             className={`project-list-row ${isActive ? 'active' : ''}`}
-            onClick={() => onProjectClick(project.id)}
           >
-            <div className="project-list-main">
+            <button
+              type="button"
+              className="project-list-preview"
+              onClick={() => onProjectClick(project.id)}
+            >
+              <div className="project-list-main">
               <div className="project-list-title-row">
                 <h3>{project.title}</h3>
                 <ChevronRight size={16} className="project-list-chevron" aria-hidden="true" />
@@ -678,8 +685,18 @@ export default function Projects({
                   </span>
                 </div>
               )}
-            </div>
-          </button>
+              </div>
+            </button>
+            <button
+              type="button"
+              className="project-list-open-page"
+              onClick={() => openFullProjectPage(project.id)}
+              aria-label={`Open full page for ${project.title}`}
+            >
+              <span>Open full page</span>
+              <ExternalLink size={13} aria-hidden="true" />
+            </button>
+          </div>
         );
       })}
     </div>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { ExternalLink } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../lib/constants';
@@ -39,7 +40,7 @@ export default function ProjectModal({ projectId, onClose, onViewFull, onPersonC
   const header = (
     <>
       <button data-testid="view-full-project" className="view-full-link" onClick={() => onViewFull(project.id)}>
-        View full project page &rarr;
+        Open full page <ExternalLink size={13} aria-hidden="true" />
       </button>
       <h2>{project.title}</h2>
       <div className="modal-meta">

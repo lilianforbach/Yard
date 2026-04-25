@@ -2213,14 +2213,13 @@ textarea.editable-field-input { min-height: 4rem; }
 .project-list-row {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 0.55rem;
   width: 100%;
   padding: 0.42rem 0 0.55rem;
-  border: none;
   border-bottom: 1px solid var(--color-border);
   border-radius: 0;
   background: transparent;
-  cursor: pointer;
   text-align: left;
   transition: border-color 0.18s ease, color 0.18s ease;
 }
@@ -2232,6 +2231,19 @@ textarea.editable-field-input { min-height: 4rem; }
 .project-list-row.active {
   border-bottom-color: rgba(46, 90, 136, 0.55);
   background: rgba(46, 90, 136, 0.04);
+}
+
+.project-list-preview {
+  display: flex;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
 }
 
 .project-list-main {
@@ -2277,14 +2289,47 @@ textarea.editable-field-input { min-height: 4rem; }
   transition: opacity 0.15s ease;
 }
 
-.project-list-row:hover .project-list-chevron,
-.project-list-row:focus-visible .project-list-chevron {
+.project-list-preview:hover .project-list-chevron,
+.project-list-preview:focus-visible .project-list-chevron {
   opacity: 0.6;
 }
 
-.project-list-row:focus-visible {
+.project-list-preview:focus-visible,
+.project-list-open-page:focus-visible {
   outline: none;
+}
+
+.project-list-row:focus-within {
   border-bottom-color: rgba(46, 90, 136, 0.45);
+}
+
+.project-list-open-page {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  flex-shrink: 0;
+  padding: 0.16rem 0.35rem;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-aldhelm);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  opacity: 0;
+  transition: background-color 0.18s ease, color 0.18s ease, opacity 0.18s ease;
+}
+
+.project-list-row:hover .project-list-open-page,
+.project-list-row:focus-within .project-list-open-page,
+.project-list-row.active .project-list-open-page,
+.project-list-open-page:hover,
+.project-list-open-page:focus-visible {
+  background: rgba(46, 90, 136, 0.08);
+  color: var(--color-interactive);
+  opacity: 1;
 }
 
 .projects-empty-state {
@@ -3535,7 +3580,9 @@ textarea.editable-field-input { min-height: 4rem; }
   color: var(--color-text-light);
 }
 .view-full-link {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
   font-size: 0.8rem;
   color: var(--color-aldhelm);
   background: none;
