@@ -197,10 +197,19 @@ function AppShell() {
   };
 
   const handleProjectClick = (projectId) => {
+    if (!isMobile) {
+      setSidebarCollapsed(true);
+    }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('person');
     nextParams.set('project', projectId);
     setSearchParams(nextParams, { replace: true });
+  };
+
+  const handleWorkspacePanelOpen = () => {
+    if (!isMobile) {
+      setSidebarCollapsed(true);
+    }
   };
 
   const handleViewFullProject = (projectId) => {
@@ -330,9 +339,9 @@ function AppShell() {
                   : <Navigate to="/projects" replace />}
               />
               <Route path="/publications" element={<Publications />} />
-              <Route path="/events" element={<Events />} />
+              <Route path="/events" element={<Events onPanelOpen={handleWorkspacePanelOpen} />} />
               <Route path="/milestones" element={<Navigate to={reviewAccess ? '/review' : '/projects'} replace />} />
-              <Route path="/concept-notes" element={<ConceptNotes />} />
+              <Route path="/concept-notes" element={<ConceptNotes onPanelOpen={handleWorkspacePanelOpen} />} />
               <Route path="/resources" element={<Resources />} />
               <Route path="/rri" element={<Navigate to="/resources" replace />} />
               <Route path="/onboarding" element={<Onboarding />} />

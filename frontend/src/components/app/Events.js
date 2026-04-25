@@ -7,7 +7,7 @@ import { matchesSearchQuery } from '../../lib/search';
 import SlidePanel from './SlidePanel';
 import { SectionNotice, SectionSkeleton } from './SectionState';
 
-export default function Events() {
+export default function Events({ onPanelOpen }) {
   const { events, loading, refreshResource, resourceStatus } = useData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState('upcoming');
@@ -110,6 +110,7 @@ export default function Events() {
                     data-testid={`event-list-item-${event.id}`}
                     className={`event-list-item ${selectedEventId === event.id ? 'active' : ''}`}
                     onClick={() => {
+                      onPanelOpen?.();
                       const nextParams = new URLSearchParams(searchParams);
                       nextParams.set('event', event.id);
                       setSearchParams(nextParams, { replace: true });

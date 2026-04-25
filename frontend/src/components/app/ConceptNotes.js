@@ -86,7 +86,7 @@ function getActiveWindowSummary(note) {
   return `Active window ends in ${daysUntilActiveEnds} days`;
 }
 
-export default function ConceptNotes() {
+export default function ConceptNotes({ onPanelOpen }) {
   const { permissions } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const {
@@ -777,6 +777,7 @@ export default function ConceptNotes() {
                   type="button"
                   className="cn-related-note-button"
                   onClick={() => {
+                    onPanelOpen?.();
                     setSelectedNoteId(relatedId);
                     const nextParams = new URLSearchParams(searchParams);
                     nextParams.set('note', relatedId);
@@ -854,6 +855,7 @@ export default function ConceptNotes() {
                     data-testid={`concept-note-${note.id}`}
                     className={`cn-list-row ${selectedNoteId === note.id ? 'active' : ''}`}
                     onClick={() => {
+                      onPanelOpen?.();
                       setSelectedNoteId(note.id);
                       const nextParams = new URLSearchParams(searchParams);
                       nextParams.set('note', note.id);
