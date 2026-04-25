@@ -38,7 +38,7 @@ const sectionMeta = {
     label: 'Dashboard',
     title: 'Dashboard',
     path: '/dashboard',
-    description: "See what's happening across the programme.",
+    description: 'A quick view of project movement, milestones, and programme activity.',
   },
   people: {
     label: 'People',

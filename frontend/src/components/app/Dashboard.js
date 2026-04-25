@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
+  ArrowRight,
   BookOpen,
   Calendar,
   Compass,
@@ -14,14 +15,10 @@ import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../lib/constants';
 import {
   getConceptNoteContributorLabel,
-  getConceptNoteFrontstageState,
-  getConceptNoteProgressSummary,
   getConceptNoteSortDate,
 } from '../../lib/conceptNotes';
 import { SectionNotice, SectionSkeleton } from './SectionState';
 import { canAccessMaintenance, formatDaysAgo, getMaintenanceSnapshot } from '../../lib/maintenance';
-import { getLinkedPerson } from '../../lib/roleAccess';
-import { canAccessProjectReview } from '../../lib/projectReview';
 import PasswordResetModal from './PasswordResetModal';
 
 function parseDateValue(value) {
@@ -104,6 +101,11 @@ function DashboardStreamCard({
     <section className={`dash-stream-card tone-${tone}`}>
       <header className="dash-stream-card-header">
         <h3 className="dash-stream-card-title">{title}</h3>
+        {hiddenCount > 0 && typeof onMore === 'function' && (
+          <button type="button" className="dash-stream-header-more" onClick={onMore} aria-label={moreLabel || `See more ${title.toLowerCase()}`}>
+            <ArrowRight size={15} />
+          </button>
+        )}
       </header>
 
       {items.length > 0 ? (
@@ -145,22 +147,14 @@ function DashboardStreamCard({
       ) : (
         <div className="dash-stream-empty">{emptyText}</div>
       )}
-
-      {hiddenCount > 0 && typeof onMore === 'function' && (
-        <footer className="dash-stream-footer">
-          <button type="button" className="dash-stream-more" onClick={onMore}>
-            {moreLabel || 'See more'}
-          </button>
-        </footer>
-      )}
     </section>
   );
 }
 
 const DASHBOARD_STREAM_LIMITS = {
-  updates: 4,
-  challenges: 4,
-  milestones: 4,
+  updates: 3,
+  challenges: 3,
+  milestones: 3,
   events: 3,
   conceptNotes: 3,
   publications: 3,
@@ -242,9 +236,7 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
   const [selectedAccount, setSelectedAccount] = useState(null);
 
   const dashboardResourceKeys = ['activity', 'milestones', 'conceptNotes', 'events', 'publications', 'projects', 'people'];
-  const linkedPerson = getLinkedPerson(permissions, getPerson);
   const maintenanceAccess = canAccessMaintenance(permissions);
-  const reviewAccess = canAccessProjectReview(permissions, linkedPerson);
   const currentView = maintenanceAccess && searchParams.get('view') === 'maintenance' ? 'maintenance' : 'overview';
   const adminMaintenanceAccess = Boolean(permissions?.isAdmin);
 
@@ -415,10 +407,8 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         return {
           key: project.id,
           title: getProjectShortName(project.title),
-          meta: primaryDate
-            ? `${formatDate(primaryDate)} • ${visibleChallenges.length === 1 ? `${severityLabel} challenge` : `${visibleChallenges.length} active challenges`}`
-            : visibleChallenges.length === 1 ? `${severityLabel} challenge` : `${visibleChallenges.length} active challenges`,
-          metaSecondary: primaryChallenge.description,
+          meta: visibleChallenges.length === 1 ? `${severityLabel} challenge` : `${visibleChallenges.length} current challenges`,
+          metaSecondary: primaryDate ? formatDate(primaryDate) : '',
           severity: primaryChallenge.severity,
           sortDate: primaryDate,
           onClick: () => onProjectClick(project.id),
@@ -436,33 +426,16 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
       .sort((a, b) => getConceptNoteSortDate(b).localeCompare(getConceptNoteSortDate(a)))
       .map((note) => {
         const contributorLabel = getConceptNoteContributorLabel(note, getPerson);
-        const latestSignals = [...(note.progressSignals || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-        const latestSignal = latestSignals[0] || null;
-        const frontstageState = getConceptNoteFrontstageState(note);
-        const progressSummary = latestSignal ? getConceptNoteProgressSummary(latestSignal, getProject) : null;
         const sortDate = getConceptNoteSortDate(note);
-        const dateLabel = latestSignal?.date && latestSignal.date === sortDate
-          ? `Progressed ${formatDate(sortDate)}`
-          : note.updatedAt && note.updatedAt === sortDate
-            ? `Updated ${formatDate(sortDate)}`
-            : note.createdAt && note.createdAt === sortDate
-              ? `Created ${formatDate(sortDate)}`
-              : sortDate
-                ? `Updated ${formatDate(sortDate)}`
-                : '';
         return {
           key: note.id,
           title: note.title,
-          meta: [dateLabel, contributorLabel].filter(Boolean).join(' • '),
-          metaSecondary: frontstageState === 'progressed'
-            ? progressSummary?.label || 'Progressed'
-            : reviewAccess && note.activeUntil
-              ? `Active until ${formatDate(note.activeUntil)}`
-              : '',
+          meta: contributorLabel,
+          metaSecondary: sortDate ? formatDate(sortDate) : '',
           onClick: () => onNavigate('conceptnotes', { note: note.id }),
         };
       }),
-    [conceptNotes, getPerson, getProject, onNavigate, reviewAccess]
+    [conceptNotes, getPerson, onNavigate]
   );
 
   const recentPublications = useMemo(
