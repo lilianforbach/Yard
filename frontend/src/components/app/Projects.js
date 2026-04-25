@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, ChevronRight, X, Plus, Maximize2 } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, ChevronUp, X, Plus, Maximize2 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -178,6 +178,43 @@ function getChallengeColumn(challengeSnapshot) {
   });
 }
 
+function ProjectReviewChallengeItem({ challenge }) {
+  const [expanded, setExpanded] = useState(false);
+  const description = challenge.description || '';
+  const isExpandable = description.length > 180;
+  const tone = challenge.severity === 'blocking'
+    ? 'danger'
+    : challenge.severity === 'slowing' || challenge.severity === 'minor'
+      ? 'warning'
+      : 'neutral';
+
+  return (
+    <div className="project-review-challenge-item">
+      <div className="project-review-challenge-heading">
+        <span className={`project-review-challenge-label ${tone}`}>
+          {getChallengeSeverityLabel(challenge.severity)}
+        </span>
+        {isExpandable && (
+          <button
+            type="button"
+            className="project-review-challenge-toggle"
+            onClick={(event) => {
+              event.stopPropagation();
+              setExpanded((current) => !current);
+            }}
+            aria-label={expanded ? 'Show less challenge' : 'Show full challenge'}
+          >
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        )}
+      </div>
+      <span className={`project-review-challenge-text ${expanded ? 'expanded' : ''}`}>
+        {description}
+      </span>
+    </div>
+  );
+}
+
 function groupByMonth(items) {
   const grouped = new Map();
 
@@ -258,6 +295,10 @@ export default function Projects({
 
   const openFullProjectPage = (projectId) => {
     navigate(`/projects/${projectId}`);
+  };
+
+  const openProjectFromReview = (projectId) => {
+    onProjectClick(projectId);
   };
 
   const setView = (nextView) => {
@@ -794,15 +835,25 @@ export default function Projects({
                       const challengeItems = getChallengeColumn(reviewSnapshot?.challengeSnapshot);
 
                       return (
-                        <button
+                        <div
                           key={project.id}
-                          type="button"
                           className={`project-review-row ${selectedProjectId === project.id ? 'active' : ''}`}
-                          onClick={() => onProjectClick(project.id)}
+                          onClick={() => openProjectFromReview(project.id)}
                         >
                           <div className="project-review-main">
                             <div className="project-review-title-row">
-                              <h4>{project.title}</h4>
+                              <h4>
+                                <button
+                                  type="button"
+                                  className="project-review-title-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openProjectFromReview(project.id);
+                                  }}
+                                >
+                                  {project.title}
+                                </button>
+                              </h4>
                             </div>
                             <div className="project-review-inline-meta">
                               <span className="project-review-inline-item">
@@ -823,22 +874,11 @@ export default function Projects({
                             {challengeItems.length > 0 ? (
                               <div className="project-review-challenge-list">
                                 {challengeItems.map((challenge, index) => {
-                                  const tone = challenge.severity === 'blocking'
-                                    ? 'danger'
-                                    : challenge.severity === 'slowing' || challenge.severity === 'minor'
-                                      ? 'warning'
-                                      : 'neutral';
-
                                   return (
-                                    <div
+                                    <ProjectReviewChallengeItem
                                       key={challenge.id || `${project.id}-challenge-${index}`}
-                                      className="project-review-challenge-item"
-                                    >
-                                      <span className={`project-review-challenge-label ${tone}`}>
-                                        {getChallengeSeverityLabel(challenge.severity)} challenge
-                                      </span>
-                                      <span className="project-review-challenge-text">{challenge.description}</span>
-                                    </div>
+                                      challenge={challenge}
+                                    />
                                   );
                                 })}
                               </div>
@@ -846,7 +886,7 @@ export default function Projects({
                               <span className="project-review-column-value subtle">No active challenges</span>
                             )}
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </>

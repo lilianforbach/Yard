@@ -2655,6 +2655,22 @@ textarea.editable-field-input { min-height: 4rem; }
   font-weight: 600;
   line-height: 1.35;
 }
+.project-review-title-button {
+  border: none;
+  background: none;
+  padding: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+.project-review-title-button:hover,
+.project-review-title-button:focus-visible {
+  color: var(--color-aldhelm);
+  outline: none;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
 .project-review-inline-meta {
   display: flex;
   gap: 0.45rem;
@@ -2731,6 +2747,12 @@ textarea.editable-field-input { min-height: 4rem; }
   padding-top: 0.55rem;
   border-top: 1px solid color-mix(in srgb, var(--color-border) 82%, transparent);
 }
+.project-review-challenge-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  width: fit-content;
+}
 .project-review-challenge-label {
   font-size: 0.72rem;
   font-weight: 700;
@@ -2753,6 +2775,30 @@ textarea.editable-field-input { min-height: 4rem; }
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+.project-review-challenge-text.expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+.project-review-challenge-toggle {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--color-aldhelm);
+  cursor: pointer;
+  border-radius: 999px;
+}
+.project-review-challenge-toggle:hover,
+.project-review-challenge-toggle:focus-visible {
+  color: color-mix(in srgb, var(--color-aldhelm) 76%, black 24%);
+  background: rgba(46, 90, 136, 0.08);
+  outline: none;
 }
 .review-activity-feed {
   max-height: min(72vh, 860px);
