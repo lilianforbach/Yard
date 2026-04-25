@@ -3652,7 +3652,10 @@ textarea.editable-field-input { min-height: 4rem; }
 .milestone-date-compact { margin-left: auto; color: var(--color-text-light); font-size: 0.75rem; }
 
 /* ─── PROJECT FULL PAGE ──────────────────────────────────── */
-.project-full-page { }
+.project-full-page {
+  width: min(100%, 840px);
+  margin: 0 auto;
+}
 
 .back-btn {
   display: inline-flex;
