@@ -288,6 +288,8 @@ export default function Projects({
     ? 'review'
     : requestedView === 'teams'
       ? 'teams'
+      : requestedView === 'mine'
+        ? 'mine'
       : 'overview';
   const selectedProjectId = searchParams.get('project');
 
@@ -362,6 +364,8 @@ export default function Projects({
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => (
+      (activeView !== 'mine' || Boolean(linkedPerson?.id && getProjectTeamMemberIds(project).includes(linkedPerson.id)))
+      &&
       matchesSearchQuery(
         catalogueSearch,
         project.title,
@@ -372,7 +376,7 @@ export default function Projects({
           .filter(Boolean)
       )
     ));
-  }, [catalogueSearch, getPerson, projects]);
+  }, [activeView, catalogueSearch, getPerson, linkedPerson?.id, projects]);
 
   const projectIndex = useMemo(() => (
     projects.map((project) => {
@@ -645,6 +649,12 @@ export default function Projects({
 
   const overviewCatalogue = (
     <div className="projects-list">
+      {overviewCards.length === 0 && (
+        <div className="projects-empty-state">
+          <h4>{activeView === 'mine' ? 'No projects are linked to your profile yet.' : 'No projects match this search.'}</h4>
+          <p>{activeView === 'mine' ? 'Projects appear here when your profile is listed as the lead or part of the project team.' : 'Try a different search term.'}</p>
+        </div>
+      )}
       {overviewCards.map(({ project, lead }) => {
         const isActive = selectedProjectId === project.id;
 
@@ -684,6 +694,7 @@ export default function Projects({
         <div className="section-controls">
           <div className="view-toggle">
             <button data-testid="projects-overview-view" className={`filter-btn ${activeView === 'overview' ? 'active' : ''}`} onClick={() => setView('overview')}>Overview</button>
+            <button data-testid="projects-mine-view" className={`filter-btn ${activeView === 'mine' ? 'active' : ''}`} onClick={() => setView('mine')}>My Projects</button>
             <button data-testid="projects-teams-view" className={`filter-btn ${activeView === 'teams' ? 'active' : ''}`} onClick={() => setView('teams')}>Teams</button>
           </div>
           <div className="search-box">
@@ -705,7 +716,7 @@ export default function Projects({
         </div>
       )}
 
-      {activeView === 'overview' && (
+      {(activeView === 'overview' || activeView === 'mine') && (
         <div className="projects-catalogue-pane">
           <div className="projects-list-scroll">
             {overviewCatalogue}

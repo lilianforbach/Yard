@@ -87,6 +87,8 @@ Use wording that makes visibility and attention consequences clear, especially a
 
 Do not invent a new button class unless the existing patterns clearly fail the use case.
 
+Sidebar personal shortcuts may appear in the footer identity area when they help users orient to their own profile or directly linked projects. Keep them quiet, factual, and membership-based; they should not become a personal dashboard, task list, or productivity surface.
+
 ### Surfaces
 
 Reuse the existing surface family before adding new card types:

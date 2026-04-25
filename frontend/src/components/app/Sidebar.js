@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { useAuth } from '../../contexts/AuthContext';
-import { LayoutDashboard, Users, Microscope, Repeat2, Lightbulb, BookOpen, Calendar, Library, PanelLeft, LogOut, X, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, Users, Microscope, Repeat2, Lightbulb, BookOpen, Calendar, Library, PanelLeft, LogOut, X, Sun, Moon, UserRound, FolderOpen } from 'lucide-react';
 
 const primaryNav = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -18,7 +18,20 @@ const secondaryNav = [
   { id: 'resources', label: 'Getting Started', icon: Library },
 ];
 
-export default function Sidebar({ activeSection, onNavigate, showReview = false, collapsed, mobile, mobileOpen, onToggle, userEmail = '' }) {
+export default function Sidebar({
+  activeSection,
+  onNavigate,
+  showReview = false,
+  collapsed,
+  mobile,
+  mobileOpen,
+  onToggle,
+  userEmail = '',
+  linkedPerson = null,
+  myProjectsCount = 0,
+  onOpenMyProfile,
+  onOpenMyProjects,
+}) {
   const { logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const navItems = showReview ? [...primaryNav, reviewNavItem] : primaryNav;
@@ -116,7 +129,34 @@ export default function Sidebar({ activeSection, onNavigate, showReview = false,
         {!collapsed && userEmail && (
           <div className="sidebar-user">
             <span className="sidebar-user-label">Signed in as</span>
-            <span className="sidebar-user-email" data-testid="user-email">{userEmail}</span>
+            <span className="sidebar-user-email" data-testid="user-email">{linkedPerson?.name || userEmail}</span>
+            {linkedPerson?.name && <span className="sidebar-user-email secondary">{userEmail}</span>}
+          </div>
+        )}
+        {linkedPerson?.id && (
+          <div className="sidebar-shortcuts" aria-label="Personal shortcuts">
+            <button
+              type="button"
+              data-testid="my-profile-shortcut"
+              className="sidebar-shortcut-btn"
+              onClick={onOpenMyProfile}
+              title="My Profile"
+              aria-label="Open My Profile"
+            >
+              <UserRound size={16} />
+              {!collapsed && <span>My Profile</span>}
+            </button>
+            <button
+              type="button"
+              data-testid="my-projects-shortcut"
+              className="sidebar-shortcut-btn"
+              onClick={onOpenMyProjects}
+              title="My Projects"
+              aria-label={`Open My Projects${myProjectsCount ? `, ${myProjectsCount} linked` : ''}`}
+            >
+              <FolderOpen size={16} />
+              {!collapsed && <span>My Projects</span>}
+            </button>
           </div>
         )}
         {!collapsed && (

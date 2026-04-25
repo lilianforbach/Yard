@@ -29,6 +29,7 @@ import ConceptNotes from './components/app/ConceptNotes';
 import Resources from './components/app/Resources';
 import Onboarding from './components/app/Onboarding';
 import { canAccessProjectReview } from './lib/projectReview';
+import { getProjectTeamMemberIds } from './lib/projectTeam';
 import { getLinkedPerson } from './lib/roleAccess';
 import './App.css';
 
@@ -106,7 +107,7 @@ function ProjectFullPageRoute({ onBack, onPersonClick }) {
 
 function AppShell() {
   const { user, permissions } = useAuth();
-  const { error, fetchAll, refreshing, getPerson } = useData();
+  const { error, fetchAll, refreshing, getPerson, projects } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -143,6 +144,10 @@ function AppShell() {
     () => canAccessProjectReview(permissions, linkedPerson),
     [linkedPerson, permissions]
   );
+  const myProjects = useMemo(() => {
+    if (!linkedPerson?.id) return [];
+    return projects.filter((project) => getProjectTeamMemberIds(project).includes(linkedPerson.id));
+  }, [linkedPerson?.id, projects]);
   const activeSection = useMemo(() => getSectionFromPath(location.pathname), [location.pathname]);
   const isProjectDetailRoute = location.pathname.startsWith('/projects/');
   const personPanelId = searchParams.get('person');
@@ -222,6 +227,15 @@ function AppShell() {
     updateSearchParam('person', null);
   };
 
+  const handleOpenMyProfile = () => {
+    if (!linkedPerson?.id) return;
+    handlePersonClick(linkedPerson.id);
+  };
+
+  const handleOpenMyProjects = () => {
+    handleNavigate('projects', { view: 'mine' });
+  };
+
   return (
     <div className="cg-app">
       <a href="#main-content" className="skip-nav">Skip to main content</a>
@@ -240,6 +254,10 @@ function AppShell() {
         mobile={isMobile}
         mobileOpen={mobileNavOpen}
         userEmail={user?.email || ''}
+        linkedPerson={linkedPerson}
+        myProjectsCount={myProjects.length}
+        onOpenMyProfile={handleOpenMyProfile}
+        onOpenMyProjects={handleOpenMyProjects}
         onToggle={() => {
           if (isMobile) {
             setMobileNavOpen(false);
