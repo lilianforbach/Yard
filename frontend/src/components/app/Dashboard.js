@@ -605,7 +605,7 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
           <div className="dashboard-gallery-group">
             <h3 className="dashboard-gallery-group-title">Programme</h3>
             <DashboardStreamCard
-              title="Events"
+              title="Upcoming Events"
               items={upcomingEvents.slice(0, DASHBOARD_STREAM_LIMITS.events)}
               totalCount={upcomingEvents.length}
               emptyText="No upcoming events scheduled."
