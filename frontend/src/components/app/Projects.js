@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, ChevronRight, X, Plus, Maximize2 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
@@ -29,6 +29,12 @@ const TIMELINE_RANGE_OPTIONS = [
   { value: '3y', label: '3 years' },
   { value: 'programme', label: 'Programme' },
 ];
+const PROJECT_CONTEXT_TABS = new Set(['health', 'timeline', 'activity']);
+
+function getProjectContextTab(value) {
+  if (value === 'scan') return 'health';
+  return PROJECT_CONTEXT_TABS.has(value) ? value : 'health';
+}
 
 function parseMilestoneDate(value) {
   if (!value) return null;
@@ -235,6 +241,12 @@ export default function Projects({
         ? 'mine'
       : 'overview';
   const selectedProjectId = searchParams.get('project');
+  const requestedProjectContextTab = searchParams.get('tab');
+
+  useEffect(() => {
+    if (activeView !== 'review') return;
+    setReviewView(getProjectContextTab(requestedProjectContextTab));
+  }, [activeView, requestedProjectContextTab]);
 
   const openFullProjectPage = (projectId) => {
     navigate(`/projects/${projectId}`);

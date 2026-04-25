@@ -93,8 +93,12 @@ function DashboardStreamCard({
   emptyText,
   icon,
   tone,
+  totalCount,
+  moreLabel,
+  onMore,
 }) {
   const Icon = icon;
+  const hiddenCount = Math.max(0, (totalCount ?? items.length) - items.length);
 
   return (
     <section className={`dash-stream-card tone-${tone}`}>
@@ -141,9 +145,26 @@ function DashboardStreamCard({
       ) : (
         <div className="dash-stream-empty">{emptyText}</div>
       )}
+
+      {hiddenCount > 0 && typeof onMore === 'function' && (
+        <footer className="dash-stream-footer">
+          <button type="button" className="dash-stream-more" onClick={onMore}>
+            {moreLabel || 'See more'}
+          </button>
+        </footer>
+      )}
     </section>
   );
 }
+
+const DASHBOARD_STREAM_LIMITS = {
+  updates: 4,
+  challenges: 4,
+  milestones: 4,
+  events: 3,
+  conceptNotes: 3,
+  publications: 3,
+};
 
 function AccountAccessCard({
   accounts,
@@ -574,51 +595,71 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         </div>
       ) : (
         <div className="dashboard-gallery">
-          <div className="dashboard-gallery-row">
+          <div className="dashboard-gallery-group">
+            <h3 className="dashboard-gallery-group-title">Projects</h3>
             <DashboardStreamCard
               title="Updates"
-              items={updates}
+              items={updates.slice(0, DASHBOARD_STREAM_LIMITS.updates)}
+              totalCount={updates.length}
               emptyText="No published updates yet."
               icon={FileText}
               tone="updates"
-            />
-            <DashboardStreamCard
-              title="Upcoming milestones"
-              items={upcomingMilestones}
-              emptyText="No upcoming milestones right now."
-              icon={Flag}
-              tone="milestones"
+              moreLabel="See more in Project Context"
+              onMore={() => onNavigate('review', { tab: 'activity' })}
             />
             <DashboardStreamCard
               title="Challenges"
-              items={currentChallenges}
+              items={currentChallenges.slice(0, DASHBOARD_STREAM_LIMITS.challenges)}
+              totalCount={currentChallenges.length}
               emptyText="No active challenges right now."
               icon={Compass}
               tone="challenges"
+              moreLabel="See more in Project Context"
+              onMore={() => onNavigate('review', { tab: 'scan' })}
+            />
+            <DashboardStreamCard
+              title="Upcoming milestones"
+              items={upcomingMilestones.slice(0, DASHBOARD_STREAM_LIMITS.milestones)}
+              totalCount={upcomingMilestones.length}
+              emptyText="No upcoming milestones right now."
+              icon={Flag}
+              tone="milestones"
+              moreLabel="See more in Project Context"
+              onMore={() => onNavigate('review', { tab: 'timeline' })}
             />
           </div>
 
-          <div className="dashboard-gallery-row">
+          <div className="dashboard-gallery-group">
+            <h3 className="dashboard-gallery-group-title">Programme</h3>
             <DashboardStreamCard
               title="Events"
-              items={upcomingEvents}
+              items={upcomingEvents.slice(0, DASHBOARD_STREAM_LIMITS.events)}
+              totalCount={upcomingEvents.length}
               emptyText="No upcoming events scheduled."
               icon={Calendar}
               tone="events"
+              moreLabel="See more in Events"
+              onMore={() => onNavigate('events')}
             />
             <DashboardStreamCard
               title="Concept Notes"
-              items={recentConceptNotes}
+              items={recentConceptNotes.slice(0, DASHBOARD_STREAM_LIMITS.conceptNotes)}
+              totalCount={recentConceptNotes.length}
               emptyText="No active or recently progressed concept notes."
               icon={Lightbulb}
               tone="concept"
+              moreLabel="See more in Concept Notes"
+              onMore={() => onNavigate('conceptnotes')}
             />
             <DashboardStreamCard
               title="Publications"
-              items={recentPublications}
+              items={recentPublications.slice(0, DASHBOARD_STREAM_LIMITS.publications)}
+              totalCount={recentPublications.length}
               emptyText="No publications in the last 3 months."
               icon={BookOpen}
               tone="publication"
+              moreLabel="See more in Publications"
+              onMore={() => onNavigate('publications')}
             />
           </div>
 

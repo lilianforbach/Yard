@@ -33,7 +33,9 @@ Avoid language that implies surveillance, scoring, compliance, productivity meas
 
 ### Dashboard
 
-The dashboard is for recent context, shared attention, and light programme awareness. It may show items needing attention, but should not become a managerial report or review queue.
+The dashboard is a focused awareness surface for recent context, shared attention, and light programme awareness. It should use a centered, scannable column of capped stream previews rather than a broad control-panel layout.
+
+Dashboard previews may link to fuller context surfaces such as Project Context, Events, Concept Notes, and Publications. They should not become managerial reports, review queues, personal task lists, or productivity feeds.
 
 Maintenance/admin dashboard areas should stay operational and quiet.
 
@@ -93,7 +95,7 @@ Sidebar personal shortcuts may appear in the footer identity area when they help
 
 Reuse the existing surface family before adding new card types:
 
-- dashboard stream cards for recent context
+- dashboard stream cards in a focused awareness column for recent context
 - maintenance cards for quiet operational upkeep
 - project rows/cards for catalogue browsing
 - project full-page sections for project records
@@ -108,9 +110,11 @@ Avoid nested cards unless the content genuinely needs a framed repeated item ins
 
 Do not globally constrain `.cg-content-inner`.
 
-Use broad layouts for workspace surfaces such as Dashboard, Projects catalogue, Review scan/timeline-style views, People grids, Concept Notes, Events, and Publications.
+Use broad layouts for workspace surfaces such as Projects catalogue, Review scan/timeline-style views, People grids, Concept Notes, Events, and Publications.
 
 Use focused widths for reading/detail surfaces where wide cards distort the experience, such as project detail pages and static Resources/Onboarding content.
+
+Use focused widths for focused awareness surfaces where broad cards make scanning harder. Dashboard Overview uses the same 840px focused width as project detail pages, while Dashboard Maintenance may keep broader operational width.
 
 Slide-out panels and modals should keep their own contextual width rules.
 
@@ -158,6 +162,8 @@ Do not add broad visual refactors while making a narrow feature change.
 Do not add large explanatory text blocks inside the app to compensate for unclear UI. Improve the interaction or put durable explanation in Resources/Onboarding.
 
 Flag trust-sensitive wording when a change could make Yard feel like monitoring, reporting, ranking, or performance management.
+
+Do not widen Dashboard Overview back to the broad workspace width without an explicit product decision; it is intentionally focused.
 
 ## Maintenance Rule
 
