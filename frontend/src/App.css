@@ -3653,7 +3653,14 @@ textarea.editable-field-input { min-height: 4rem; }
 }
 
 .update-item-compact { padding: 0.5rem 0; border-bottom: 1px solid var(--color-border); }
-.update-title-compact { font-size: 0.8rem; font-weight: 500; }
+.update-title-compact {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
 .update-meta-compact { font-size: 0.75rem; color: var(--color-text-light); }
 
 .milestone-item-compact { display: flex; align-items: center; gap: 0.5rem; padding: 0.375rem 0; font-size: 0.8rem; }

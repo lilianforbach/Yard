@@ -477,11 +477,9 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const [teamContributorDrafts, setTeamContributorDrafts] = useState([]);
   const [showAbstract, setShowAbstract] = useState(false);
   const [showAllProgress, setShowAllProgress] = useState(false);
-  const [showAllFeedback, setShowAllFeedback] = useState(false);
   const [showExpandedMilestones, setShowExpandedMilestones] = useState(false);
   const [projectSvgIndex, setProjectSvgIndex] = useState(0);
   const [entrySvgIndexes, setEntrySvgIndexes] = useState({});
-  const [expandedFeedback, setExpandedFeedback] = useState({});
 
   const saveEntryEdit = useCallback(async (publish = false) => {
     if (!editingEntry || editingEntrySubmittingRef.current) return;
@@ -937,21 +935,18 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
     .sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''));
   const currentChallenges = project.currentChallenges || [];
   const resolvedChallenges = project.resolvedChallenges || [];
-  const progressEntries = (project.updates || [])
-    .map((u, idx) => ({ ...u, entryType: 'updates', origIndex: idx }))
-    .sort((a, b) => ((b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '')));
   const feedbackEntries = (project.feedback || [])
     .map((f, idx) => ({ ...f, entryType: 'feedback', origIndex: idx }))
-    .filter((entry) => access.canViewFeedbackEntry(entry))
-    .sort((a, b) => ((b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '')));
-  const showFeedbackSection = canAddFeedback || feedbackEntries.length > 0;
+    .filter((entry) => access.canViewFeedbackEntry(entry));
+  const progressEntries = [
+    ...(project.updates || []).map((u, idx) => ({ ...u, entryType: 'updates', origIndex: idx })),
+    ...feedbackEntries,
+  ].sort((a, b) => ((b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '')));
   const abstractPreview = project.abstract
     ? `${project.abstract.substring(0, 220).trim()}${project.abstract.length > 220 ? '...' : ''}`
     : 'No abstract added yet.';
   const visibleProgressEntries = showAllProgress ? progressEntries : progressEntries.slice(0, 2);
   const hiddenProgressCount = Math.max(0, progressEntries.length - visibleProgressEntries.length);
-  const visibleFeedbackEntries = showAllFeedback ? feedbackEntries : feedbackEntries.slice(0, 2);
-  const hiddenFeedbackCount = Math.max(0, feedbackEntries.length - visibleFeedbackEntries.length);
   const recentlyResolvedSection = resolvedChallenges.length > 0 && (
     <div className="pf-section pf-collapsible-section">
       <button
@@ -1327,11 +1322,18 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
           <div className="pf-section">
             <div className="pf-section-header">
               <h3>Progress</h3>
-              {canAddUpdate && (
+              {(canAddUpdate || canAddFeedback) && (
                 <div className="pf-section-actions">
-                  <button className="action-btn small" onClick={() => openProgressComposer('update')}>
-                    <Plus size={14} /> Add Update
-                  </button>
+                  {canAddUpdate && (
+                    <button className="action-btn small" onClick={() => openProgressComposer('update')}>
+                      <Plus size={14} /> Add Update
+                    </button>
+                  )}
+                  {canAddFeedback && (
+                    <button className="action-btn small feedback-btn" onClick={() => openProgressComposer('feedback')}>
+                      <Plus size={14} /> Add Feedback
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1342,12 +1344,12 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                     <div key={i} className={`update-item ${entry.entryType === 'feedback' ? 'feedback-item' : ''} ${expandedUpdates[i] ? 'expanded' : ''}`}>
                       <div className="update-header" onClick={() => setExpandedUpdates(prev => ({ ...prev, [i]: !prev[i] }))}>
                         <div className="update-row-grid">
-                          <div className="update-title">{entry.title}</div>
+                          <div className="update-title">{entry.entryType === 'feedback' ? getFeedbackDisplayTitle(entry) : entry.title}</div>
                           <span className={`entry-type-badge ${entry.entryType}`}>
                             {entry.entryType === 'feedback' ? 'Feedback' : 'Update'}
                           </span>
                           <div className="update-date-cell">
-                            <span className="update-meta-date">{formatDate(entry.date)}</span>
+                            <span className="update-meta-date">{formatDate(entry.lastModified || entry.date)}</span>
                             <div className="update-header-right">
                               {access.canEditProjectEntry(entry) && (
                                 <button
@@ -1379,6 +1381,11 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                         {entry.entryType === 'feedback' && entry.author && (
                           <div className="update-author-line">
                             {entry.author}
+                            <span className="feedback-audience-badges">
+                              {getFeedbackAudienceBadges(entry).map((badge) => (
+                                <span key={badge} className="feedback-audience-badge">{badge}</span>
+                              ))}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -1419,7 +1426,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                 })}
             </div>
             {progressEntries.length === 0 && (
-              <p className="empty-state">No updates recorded yet.</p>
+              <p className="empty-state">No updates or feedback recorded yet.</p>
             )}
             {progressEntries.length > 2 && (
               <button
@@ -1441,99 +1448,6 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
               </button>
             )}
           </div>
-
-          {showFeedbackSection && (
-            <div className="pf-section">
-              <div className="pf-section-header">
-                <div className="pf-section-heading-stack">
-                  <h3>Feedback</h3>
-                  <p className="pf-section-note">This section may look empty because feedback is only visible to the audience chosen for it.</p>
-                </div>
-                {canAddFeedback && (
-                  <div className="pf-section-actions">
-                    <button className="action-btn small feedback-btn" onClick={() => openProgressComposer('feedback')}>
-                      <Plus size={14} /> Add Feedback
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="progress-catalogue-list">
-                {visibleFeedbackEntries.map((entry, i) => (
-                  <div key={i} className={`update-item feedback-item ${expandedFeedback[i] ? 'expanded' : ''}`}>
-                    <div className="update-header" onClick={() => setExpandedFeedback((prev) => ({ ...prev, [i]: !prev[i] }))}>
-                      <div className="update-row-grid">
-                        <div className="update-title">{getFeedbackDisplayTitle(entry)}</div>
-                        <span className="entry-type-badge feedback">Feedback</span>
-                        <div className="update-date-cell">
-                          <span className="update-meta-date">{formatDate(entry.lastModified || entry.date)}</span>
-                          <div className="update-header-right">
-                            {access.canEditProjectEntry(entry) && (
-                              <button
-                                className="entry-edit-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingEntry({
-                                    type: entry.entryType,
-                                    origIndex: entry.origIndex,
-                                    title: entry.title,
-                                    content: entry.content,
-                                    author: entry.author,
-                                    ...getFeedbackAudienceState(entry),
-                                    slidesUrl: '',
-                                    svgUrls: [],
-                                  });
-                                }}
-                                title="Edit"
-                              >
-                                Edit
-                              </button>
-                            )}
-                            <span className="update-toggle-chevron" aria-hidden="true">
-                              {expandedFeedback[i] ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      {entry.author && (
-                        <div className="update-author-line">
-                          {entry.author}
-                          <span className="feedback-audience-badges">
-                            {getFeedbackAudienceBadges(entry).map((badge) => (
-                              <span key={badge} className="feedback-audience-badge">{badge}</span>
-                            ))}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    {expandedFeedback[i] && (
-                      <div className="update-content">
-                        <LatexContent text={entry.content} className="update-content-body" />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {feedbackEntries.length > 2 && (
-                <button
-                  type="button"
-                  className="pf-secondary-toggle"
-                  onClick={() => setShowAllFeedback((current) => !current)}
-                >
-                  {showAllFeedback ? (
-                    <>
-                      <span className="inline-chevron-control" aria-hidden="true"><ChevronUp size={15} /></span>
-                      Show fewer entries
-                    </>
-                  ) : (
-                    <>
-                      <span className="inline-chevron-control" aria-hidden="true"><ChevronDown size={15} /></span>
-                      Show {hiddenFeedbackCount} older {hiddenFeedbackCount === 1 ? 'entry' : 'entries'}
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-          )}
 
           <div className="pf-section">
             <div className="pf-section-header">

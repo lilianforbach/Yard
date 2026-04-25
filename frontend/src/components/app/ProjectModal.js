@@ -27,10 +27,14 @@ export default function ProjectModal({ projectId, onClose, onViewFull, onPersonC
   const access = getProjectSurfaceAccess({ permissions, linkedPerson, project });
   const lead = getPerson(getProjectLeadId(project));
   const contributors = getProjectContributorIds(project).map((id) => getPerson(id)).filter(Boolean);
-  const visibleUpdates = (project.updates || [])
-    .slice(0, 2);
   const visibleFeedback = (project.feedback || [])
-    .filter((entry) => access.canViewFeedbackEntry(entry))
+    .map((entry) => ({ ...entry, entryType: 'feedback' }))
+    .filter((entry) => access.canViewFeedbackEntry(entry));
+  const visibleProgress = [
+    ...(project.updates || []).map((entry) => ({ ...entry, entryType: 'updates' })),
+    ...visibleFeedback,
+  ]
+    .sort((a, b) => ((b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '')))
     .slice(0, 2);
   const projMilestones = milestones
     .filter((m) => m.project === project.id)
@@ -70,26 +74,21 @@ export default function ProjectModal({ projectId, onClose, onViewFull, onPersonC
 
   const panelContent = (
     <>
-      {visibleUpdates.length > 0 && (
+      {visibleProgress.length > 0 && (
         <div className="modal-section">
           <h4>Recent Progress</h4>
-          {visibleUpdates.map((u, i) => (
+          {visibleProgress.map((entry, i) => (
             <div key={i} className="update-item-compact">
-              <div className="update-title-compact">{u.title}</div>
-              <div className="update-meta-compact">{formatDate(u.lastModified || u.date)}</div>
-            </div>
-          ))}
-        </div>
-      )}
-      {visibleFeedback.length > 0 && (
-        <div className="modal-section">
-          <h4>Feedback</h4>
-          {visibleFeedback.map((fb, i) => (
-            <div key={i} className="update-item-compact">
-              <div className="update-title-compact">{getFeedbackDisplayTitle(fb)}</div>
+              <div className="update-title-compact">
+                {entry.entryType === 'feedback' ? getFeedbackDisplayTitle(entry) : entry.title}
+                <span className={`entry-type-badge ${entry.entryType}`}>
+                  {entry.entryType === 'feedback' ? 'Feedback' : 'Update'}
+                </span>
+              </div>
               <div className="update-meta-compact">
-                {formatDate(fb.lastModified || fb.date)} &bull; {fb.author}
-                {getFeedbackAudienceBadges(fb).map((badge) => ` • ${badge}`)}
+                {formatDate(entry.lastModified || entry.date)}
+                {entry.entryType === 'feedback' && entry.author ? ` • ${entry.author}` : ''}
+                {entry.entryType === 'feedback' ? getFeedbackAudienceBadges(entry).map((badge) => ` • ${badge}`) : null}
               </div>
             </div>
           ))}
