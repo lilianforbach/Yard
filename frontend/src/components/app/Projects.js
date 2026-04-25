@@ -693,7 +693,7 @@ export default function Projects({
               onClick={() => openFullProjectPage(project.id)}
               aria-label={`Open full page for ${project.title}`}
             >
-              <span>Open full page</span>
+              <span className="project-list-open-page-label">Open full page</span>
               <ExternalLink size={13} aria-hidden="true" />
             </button>
           </div>

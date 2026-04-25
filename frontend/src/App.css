@@ -2321,6 +2321,14 @@ textarea.editable-field-input { min-height: 4rem; }
   transition: background-color 0.18s ease, color 0.18s ease, opacity 0.18s ease;
 }
 
+.project-list-open-page-label {
+  display: none;
+}
+
+.project-list-row.active .project-list-open-page-label {
+  display: inline;
+}
+
 .project-list-row:hover .project-list-open-page,
 .project-list-row:focus-within .project-list-open-page,
 .project-list-row.active .project-list-open-page,
