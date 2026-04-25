@@ -674,17 +674,17 @@ export default function Projects({
               onClick={() => onProjectClick(project.id)}
             >
               <div className="project-list-main">
-              <div className="project-list-title-row">
-                <h3>{project.title}</h3>
-                <ChevronRight size={16} className="project-list-chevron" aria-hidden="true" />
-              </div>
-              {lead && (
-                <div className="project-list-meta">
-                  <span className="project-list-lead">
-                    Lead: {lead.name}
-                  </span>
+                <div className="project-list-title-row">
+                  <h3>{project.title}</h3>
+                  <ChevronRight size={16} className="project-list-chevron" aria-hidden="true" />
                 </div>
-              )}
+                {lead && (
+                  <div className="project-list-meta">
+                    <span className="project-list-lead">
+                      Lead: {lead.name}
+                    </span>
+                  </div>
+                )}
               </div>
             </button>
             <button
