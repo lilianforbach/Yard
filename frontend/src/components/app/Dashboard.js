@@ -17,6 +17,7 @@ import {
   getConceptNoteContributorLabel,
   getConceptNoteSortDate,
 } from '../../lib/conceptNotes';
+import { isEventUpcoming } from '../../lib/events';
 import { SectionNotice, SectionSkeleton } from './SectionState';
 import { canAccessMaintenance, formatDaysAgo, getMaintenanceSnapshot } from '../../lib/maintenance';
 import PasswordResetModal from './PasswordResetModal';
@@ -454,7 +455,7 @@ export default function Dashboard({ onNavigate, onProjectClick, onNoteClick, onE
 
   const upcomingEvents = useMemo(
     () => events
-      .filter((event) => event.status === 'upcoming')
+      .filter((event) => isEventUpcoming(event))
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
       .map((event) => ({
         key: event.id,

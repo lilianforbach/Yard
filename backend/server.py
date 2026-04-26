@@ -498,6 +498,26 @@ def is_feed_item_visible_by_date(value: Optional[str], now: Optional[datetime] =
     return parsed.date() <= current.date()
 
 
+def parse_event_day(value: Optional[str]):
+    if not value:
+        return None
+    raw = value.strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def is_event_upcoming(event: Dict[str, Any], today=None) -> bool:
+    event_day = parse_event_day(event.get("date"))
+    if event_day is None:
+        return False
+    comparison_day = today or datetime.now(timezone.utc).date()
+    return event_day >= comparison_day
+
+
 def get_user_token_version(user: Dict[str, Any]) -> int:
     raw_value = user.get("token_version", 0)
     try:
@@ -3898,7 +3918,7 @@ async def get_dashboard_stats(
     projects_count = await count_collection("projects")
     publications_count = await count_collection("publications")
     events = await list_collection("events", limit=100)
-    upcoming_events = sum(1 for event in events if event.get("status") == "upcoming")
+    upcoming_events = sum(1 for event in events if is_event_upcoming(event))
     milestones = await list_collection("milestones", limit=500)
     projects = await list_collection("projects", limit=200)
     challenges = []

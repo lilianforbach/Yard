@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useData } from '../../contexts/DataContext';
 import { ChevronRight, Search } from 'lucide-react';
 import { formatDate } from '../../lib/constants';
+import { isEventPast, isEventUpcoming } from '../../lib/events';
 import { matchesSearchQuery } from '../../lib/search';
 import SlidePanel from './SlidePanel';
 import { SectionNotice, SectionSkeleton } from './SectionState';
@@ -18,7 +19,7 @@ export default function Events({ onPanelOpen }) {
     const nextEvents = filter === 'all'
       ? events
       : events.filter((event) => (
-        filter === 'past' ? event.status === 'past' : event.status !== 'past'
+        filter === 'past' ? isEventPast(event) : isEventUpcoming(event)
       ));
 
     const searchedEvents = nextEvents.filter((event) => (

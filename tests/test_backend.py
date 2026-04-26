@@ -624,6 +624,39 @@ def test_programme_data_read_endpoints_require_auth(client):
         assert response.status_code == 401, route
 
 
+def test_dashboard_stats_derives_upcoming_events_from_event_dates(client, isolated_app):
+    _, data_file = isolated_app
+    login(client)
+
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
+    payload["events"] = [
+        {
+            "id": "stale-upcoming",
+            "name": "Stale upcoming event",
+            "date": "2000-01-01",
+            "status": "upcoming",
+        },
+        {
+            "id": "future-marked-past",
+            "name": "Future event marked past",
+            "date": "2999-01-01",
+            "status": "past",
+        },
+        {
+            "id": "invalid-upcoming",
+            "name": "Invalid event marked upcoming",
+            "date": "not-a-date",
+            "status": "upcoming",
+        },
+    ]
+    data_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    stats = client.get("/api/dashboard/stats")
+
+    assert stats.status_code == 200
+    assert stats.json()["upcomingEvents"] == 1
+
+
 def test_dashboard_activity_concept_notes_include_note_id(client):
     login(client)
 
