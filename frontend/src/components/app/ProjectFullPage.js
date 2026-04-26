@@ -3,7 +3,7 @@ import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ExternalLink, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, ExternalLink, Plus, Trash2, X } from 'lucide-react';
 import { formatDate, getRoleLabel } from '../../lib/constants';
 import { buildProjectTeamPayload, getProjectContributorIds, getProjectLeadId } from '../../lib/projectTeam';
 import {
@@ -184,6 +184,142 @@ function getVisualFilename(url) {
   } catch {
     return url.split('/').filter(Boolean).pop() || url;
   }
+}
+
+function getProjectRecordExportFilename(projectId) {
+  return `yard-project-${projectId || 'record'}-${getTodayDateInputValue()}.md`;
+}
+
+function appendProjectRecordSection(lines, title, bodyLines) {
+  const items = (bodyLines || []).filter(Boolean);
+  if (!items.length) return;
+  lines.push('', `## ${title}`, '', ...items);
+}
+
+function appendProjectRecordVisuals(lines, urls) {
+  const visualLines = (urls || [])
+    .map((url) => (url ? `- ${url}` : ''))
+    .filter(Boolean);
+  if (!visualLines.length) return;
+  lines.push('', 'Supporting visuals:', ...visualLines);
+}
+
+function capitalizeValue(value) {
+  const cleaned = (value || '').trim();
+  return cleaned ? `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)}` : '';
+}
+
+function buildClientProjectRecordMarkdown({
+  project,
+  getPerson,
+  milestones,
+  permissions,
+  user,
+}) {
+  if (!project) return '';
+
+  const linkedPerson = getLinkedPerson(permissions, getPerson);
+  const access = getProjectSurfaceAccess({ permissions, linkedPerson, project });
+  const lead = getPerson(getProjectLeadId(project));
+  const contributors = getProjectContributorIds(project).map((id) => getPerson(id)).filter(Boolean);
+  const exportingUser = linkedPerson?.name || user?.name || user?.email || 'you';
+  const exportedAt = new Date().toISOString().replace(/\.\d{3}Z$/, ' UTC');
+  const lines = [
+    `# ${project.title || 'Project record'}`,
+    '',
+    `_Snapshot exported on ${exportedAt}. Includes project content visible to ${exportingUser} at export time._`,
+    '',
+    '## Project Team',
+    '',
+  ];
+
+  if (lead?.name) lines.push(`- Lead: ${lead.name}`);
+  if (contributors.length) lines.push(`- Contributors: ${contributors.map((person) => person.name).join(', ')}`);
+
+  appendProjectRecordSection(lines, 'Abstract', [(project.abstract || '').trim()]);
+
+  const currentChallengeLines = (project.currentChallenges || []).map((challenge) => {
+    const details = [
+      challenge.lastModified || challenge.date ? `Date: ${formatDate(challenge.lastModified || challenge.date)}` : '',
+      challenge.severity ? `Type: ${capitalizeValue(challenge.severity)}` : '',
+    ].filter(Boolean).join(' | ');
+    return [
+      `### ${challenge.severity ? `${capitalizeValue(challenge.severity)} challenge` : 'Current challenge'}`,
+      details,
+      '',
+      (challenge.description || '').trim(),
+    ].filter(Boolean).join('\n');
+  });
+  appendProjectRecordSection(lines, 'Current Challenges', currentChallengeLines);
+
+  const resolvedChallengeLines = (project.resolvedChallenges || []).map((challenge) => {
+    const details = [
+      challenge.resolvedDate || challenge.lastModified || challenge.date ? `Resolved: ${formatDate(challenge.resolvedDate || challenge.lastModified || challenge.date)}` : '',
+      challenge.resolvedBy ? `By: ${challenge.resolvedBy}` : '',
+    ].filter(Boolean).join(' | ');
+    return [
+      `### ${challenge.severity ? `${capitalizeValue(challenge.severity)} challenge` : 'Resolved challenge'}`,
+      details,
+      '',
+      (challenge.description || '').trim(),
+      challenge.resolutionNote ? `Resolution: ${challenge.resolutionNote}` : '',
+    ].filter(Boolean).join('\n');
+  });
+  appendProjectRecordSection(lines, 'Resolved Challenges', resolvedChallengeLines);
+
+  const milestoneLines = (milestones || [])
+    .filter((milestone) => milestone.project === project.id)
+    .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))
+    .map((milestone) => {
+      const details = [
+        milestone.dueDate ? formatDate(milestone.dueDate) : '',
+        milestone.completed ? 'completed' : '',
+      ].filter(Boolean).join(' | ');
+      return `- ${milestone.title || 'Milestone'}${details ? ` (${details})` : ''}`;
+    });
+  appendProjectRecordSection(lines, 'Milestones', milestoneLines);
+
+  const visibleFeedback = (project.feedback || [])
+    .filter((entry) => access.canViewFeedbackEntry(entry))
+    .map((entry) => ({ ...entry, entryType: 'feedback' }));
+  const progressEntries = [
+    ...(project.updates || []).map((entry) => ({ ...entry, entryType: 'update' })),
+    ...visibleFeedback,
+  ].sort((a, b) => ((b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '')));
+
+  const progressLines = progressEntries.map((entry) => {
+    const date = entry.lastModified || entry.date ? formatDate(entry.lastModified || entry.date) : '';
+    const author = entry.author || entry.raisedBy || '';
+    const type = entry.entryType === 'feedback' ? 'Feedback' : 'Update';
+    const entryLines = [
+      `### ${entry.title || type}`,
+      [type, date, author].filter(Boolean).join(' | '),
+      '',
+      (entry.content || '').trim(),
+    ].filter(Boolean);
+    appendProjectRecordVisuals(entryLines, getUninsertedSvgUrls(entry));
+    return entryLines.join('\n');
+  });
+  appendProjectRecordSection(lines, 'Progress', progressLines);
+
+  const projectVisualLines = [];
+  if (project.slidesUrl) projectVisualLines.push(`- Presentation slides: ${project.slidesUrl}`);
+  getSvgUrls(project).forEach((url) => projectVisualLines.push(`- ${url}`));
+  appendProjectRecordSection(lines, 'Project Visuals', projectVisualLines);
+
+  return `${lines.join('\n')}\n`;
+}
+
+function triggerMarkdownDownload(markdown, filename) {
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(objectUrl);
 }
 
 function escapeMarkdownImageAlt(value) {
@@ -639,6 +775,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const [projectSlidesDraft, setProjectSlidesDraft] = useState('');
   const [projectSvgDrafts, setProjectSvgDrafts] = useState([]);
   const [projectSlidesSaving, setProjectSlidesSaving] = useState(false);
+  const [projectExporting, setProjectExporting] = useState(false);
   const [svgUploading, setSvgUploading] = useState(false);
   const [editingEntry, setEditingEntry] = useState(null); // updates use origIndex; feedback uses id
   const [editingEntrySubmitting, setEditingEntrySubmitting] = useState(false);
@@ -666,6 +803,48 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const [entrySvgIndexes, setEntrySvgIndexes] = useState({});
   const progressEditorRef = useRef(null);
   const editingEditorRef = useRef(null);
+
+  const downloadProjectRecord = useCallback(async () => {
+    if (!projectId || projectExporting) return;
+    setProjectExporting(true);
+    try {
+      const response = await fetch(api.buildUrl(`/projects/${projectId}/export.md`), {
+        credentials: 'include',
+        headers: { Accept: 'text/markdown' },
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || contentType.includes('text/html')) {
+        throw new Error(`Export request failed with status ${response.status}`);
+      }
+
+      const disposition = response.headers.get('content-disposition') || '';
+      const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = filenameMatch?.[1] || getProjectRecordExportFilename(projectId);
+      const markdown = await response.text();
+      triggerMarkdownDownload(markdown, filename);
+    } catch (err) {
+      console.warn('Server project export failed; using client-side project record fallback:', err);
+      try {
+        const markdown = buildClientProjectRecordMarkdown({
+          project,
+          getPerson,
+          milestones,
+          permissions,
+          user,
+        });
+        if (!markdown.trim()) {
+          throw new Error('No project record content available');
+        }
+        triggerMarkdownDownload(markdown, getProjectRecordExportFilename(projectId));
+        showToast('Downloaded project record');
+      } catch (fallbackErr) {
+        console.error('Failed to download project record:', fallbackErr);
+        showToast('Failed to download project record', 'error');
+      }
+    } finally {
+      setProjectExporting(false);
+    }
+  }, [getPerson, milestones, permissions, project, projectExporting, projectId, showToast, user]);
 
   const saveEntryEdit = useCallback(async (publish = false) => {
     if (!editingEntry || editingEntrySubmittingRef.current) return;
@@ -1444,9 +1623,43 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
 
   return (
     <div data-testid="project-full-page" className="project-full-page">
-      <button data-testid="back-to-projects" className="back-btn" onClick={onBack}>
-        <ArrowLeft size={16} /> Back to Projects
-      </button>
+      <div className="project-full-topbar">
+        <button data-testid="back-to-projects" className="back-btn" onClick={onBack}>
+          <ArrowLeft size={16} /> Back to Projects
+        </button>
+        <div className="project-export-links">
+          <span className="project-export-tooltip-wrap">
+            <button
+              type="button"
+              className="project-export-icon-btn"
+              onClick={downloadProjectRecord}
+              disabled={projectExporting}
+              aria-label="Download project record"
+              aria-describedby="project-export-download-tooltip"
+            >
+              <Download size={15} aria-hidden="true" />
+            </button>
+            <span className="project-export-tooltip" id="project-export-download-tooltip" role="tooltip">
+              Download project record
+            </span>
+          </span>
+          <span className="project-export-tooltip-wrap">
+            <a
+              className="project-export-icon-btn"
+              href={`/projects/${projectId}/export/print`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Print view"
+              aria-describedby="project-export-print-tooltip"
+            >
+              <ExternalLink size={15} aria-hidden="true" />
+            </a>
+            <span className="project-export-tooltip" id="project-export-print-tooltip" role="tooltip">
+              Print view
+            </span>
+          </span>
+        </div>
+      </div>
       <div className="project-full-header" style={{ borderLeftColor: inst?.color || '#E5E7EB' }}>
         <div className="project-full-header-copy">
           <EditableField

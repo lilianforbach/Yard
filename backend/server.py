@@ -1225,6 +1225,246 @@ def redact_project_feedback_for_viewer(
     return project_copy
 
 
+def clean_export_line(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def append_markdown_section(lines: List[str], title: str, body_lines: List[str]) -> None:
+    content = [line for line in body_lines if line is not None]
+    if not any(str(line).strip() for line in content):
+        return
+    lines.extend(["", f"## {title}", ""])
+    lines.extend(content)
+
+
+def append_markdown_entry(lines: List[str], title: str, body_lines: List[str]) -> None:
+    lines.extend(["", f"### {clean_export_line(title)}", ""])
+    lines.extend(line for line in body_lines if line is not None)
+
+
+def get_export_person_label(person_id: Optional[str], people_by_id: Dict[str, Dict[str, Any]]) -> str:
+    if not person_id:
+        return ""
+    return people_by_id.get(person_id, {}).get("name") or person_id
+
+
+def get_export_user_label(user: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> str:
+    if linked_person and linked_person.get("name"):
+        return linked_person["name"]
+    return user.get("name") or user.get("email") or user.get("id") or "Signed-in user"
+
+
+def safe_project_export_filename(project_id: str, exported_on: str) -> str:
+    safe_id = re.sub(r"[^A-Za-z0-9_-]+", "-", project_id or "project").strip("-") or "project"
+    return f"yard-project-{safe_id}-{exported_on}.md"
+
+
+def get_export_visual_filename(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    filename = Path(unquote(parsed.path or value)).name
+    return filename or value
+
+
+def export_url_for_markdown(request: Request, value: Optional[str]) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return ""
+    parsed = urlparse(cleaned)
+    if parsed.scheme and parsed.netloc:
+        return cleaned
+    if cleaned.startswith("/"):
+        return f"{str(request.base_url).rstrip('/')}{cleaned}"
+    return cleaned
+
+
+def get_inline_visual_filenames(content: str) -> set[str]:
+    filenames: set[str] = set()
+    for match in re.finditer(r"!\[[^\]]*]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)", content or ""):
+        filename = get_export_visual_filename(match.group(1))
+        if filename:
+            filenames.add(filename)
+    return filenames
+
+
+def markdown_image_line(url: str, label: str) -> str:
+    safe_label = clean_export_line(label).replace("[", "(").replace("]", ")") or "Visual"
+    return f"![{safe_label}]({url})"
+
+
+def feedback_export_audience_label(entry: Dict[str, Any]) -> str:
+    audience = normalize_feedback_base_audience(entry.get("audience"))
+    include_reviewers = normalize_feedback_include_reviewers(entry.get("audience"), entry.get("includeReviewers"))
+    base = "Project lead" if audience == "lead" else "Project team"
+    return f"{base} + programme support" if include_reviewers else base
+
+
+def render_supporting_visuals_for_export(
+    request: Request,
+    urls: List[str],
+    inline_filenames: Optional[set[str]] = None,
+) -> List[str]:
+    inline_filenames = inline_filenames or set()
+    rendered: List[str] = []
+    for index, url in enumerate(urls, start=1):
+        filename = get_export_visual_filename(url)
+        if filename and filename in inline_filenames:
+            continue
+        export_url = export_url_for_markdown(request, url)
+        if export_url:
+            rendered.extend([
+                markdown_image_line(export_url, f"Visual {index}"),
+                "",
+            ])
+    return rendered
+
+
+def render_project_export_markdown(
+    request: Request,
+    project: Dict[str, Any],
+    user: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]],
+    people: List[Dict[str, Any]],
+    milestones: List[Dict[str, Any]],
+    concept_notes: List[Dict[str, Any]],
+) -> str:
+    people_by_id = {person.get("id"): person for person in people if person.get("id")}
+    exported_at = utc_now()
+    export_date = exported_at.strftime("%Y-%m-%d")
+    export_timestamp = exported_at.strftime("%Y-%m-%d %H:%M UTC")
+    lead_label = get_export_person_label(get_project_lead_id(project), people_by_id)
+    contributor_labels = [
+        get_export_person_label(person_id, people_by_id)
+        for person_id in get_project_member_ids(project)
+        if person_id and person_id != get_project_lead_id(project)
+    ]
+    contributor_labels = [label for label in contributor_labels if label]
+    project_id = project.get("id") or ""
+
+    lines: List[str] = [
+        f"# {clean_export_line(project.get('title') or project_id or 'Project')}",
+        "",
+        f"_Snapshot exported on {export_timestamp}. Includes project content visible to {get_export_user_label(user, linked_person)} at export time._",
+        "",
+    ]
+
+    meta_lines = []
+    if lead_label:
+        meta_lines.append(f"- Lead: {lead_label}")
+    if contributor_labels:
+        meta_lines.append(f"- Contributors: {', '.join(contributor_labels)}")
+    append_markdown_section(lines, "Project Team", meta_lines)
+
+    abstract_text = (project.get("abstract") or project.get("description") or "").strip()
+    append_markdown_section(lines, "Abstract", [abstract_text] if abstract_text else [])
+
+    related_note_lines = []
+    for note in concept_notes:
+        if project_id and project_id in (note.get("relatedProjects") or []):
+            title = clean_export_line(note.get("title") or note.get("id"))
+            if title:
+                related_note_lines.append(f"- {title}")
+    append_markdown_section(lines, "Related Concept Notes", related_note_lines)
+
+    presentation_lines = []
+    slides_url = (project.get("slidesUrl") or "").strip()
+    if slides_url:
+        presentation_lines.append(f"- Slides: {slides_url}")
+    project_visuals = render_supporting_visuals_for_export(request, normalize_visual_list(project.get("svgUrls")) or [])
+    presentation_lines.extend(project_visuals)
+    append_markdown_section(lines, "Presentation Slides And Visuals", presentation_lines)
+
+    current_challenges = sorted(
+        project.get("currentChallenges") or [],
+        key=lambda item: item.get("lastModified") or item.get("date") or "",
+        reverse=True,
+    )
+    challenge_lines: List[str] = []
+    for challenge in current_challenges:
+        title = f"{challenge.get('lastModified') or challenge.get('date') or 'Undated'} — {normalize_challenge_severity(challenge.get('severity'))}"
+        body = []
+        if challenge.get("raisedBy"):
+            body.append(f"Raised by: {challenge.get('raisedBy')}")
+            body.append("")
+        body.append((challenge.get("description") or "").strip())
+        append_markdown_entry(challenge_lines, title, body)
+    append_markdown_section(lines, "Current Challenges", challenge_lines)
+
+    resolved_challenges = sorted(
+        project.get("resolvedChallenges") or [],
+        key=lambda item: item.get("resolvedDate") or item.get("lastModified") or item.get("date") or "",
+        reverse=True,
+    )
+    resolved_lines: List[str] = []
+    for challenge in resolved_challenges:
+        title = f"{challenge.get('resolvedDate') or challenge.get('lastModified') or challenge.get('date') or 'Undated'} — {normalize_challenge_severity(challenge.get('severity'))}"
+        body = []
+        if challenge.get("resolvedBy"):
+            body.append(f"Resolved by: {challenge.get('resolvedBy')}")
+            body.append("")
+        body.append((challenge.get("description") or "").strip())
+        if challenge.get("resolutionNote"):
+            body.extend(["", f"Resolution: {challenge.get('resolutionNote')}"])
+        append_markdown_entry(resolved_lines, title, body)
+    append_markdown_section(lines, "Resolved Challenges", resolved_lines)
+
+    project_milestones = sorted(
+        [
+            milestone for milestone in milestones
+            if (milestone.get("project") or milestone.get("projectId")) == project_id
+        ],
+        key=lambda item: item.get("dueDate") or "",
+    )
+    milestone_lines: List[str] = []
+    for milestone in project_milestones:
+        due_date = milestone.get("dueDate") or "No due date"
+        status = compute_milestone_status(milestone)
+        body = [f"- Due: {due_date}", f"- Status: {status}"]
+        if milestone.get("completedDate"):
+            body.append(f"- Completed: {milestone.get('completedDate')}")
+        append_markdown_entry(milestone_lines, milestone.get("title") or "Milestone", body)
+    append_markdown_section(lines, "Milestones", milestone_lines)
+
+    progress_entries = [
+        {**entry, "entryType": "updates"} for entry in (project.get("updates") or [])
+    ] + [
+        {**entry, "entryType": "feedback"} for entry in (project.get("feedback") or [])
+    ]
+    progress_entries = sorted(
+        progress_entries,
+        key=lambda item: item.get("lastModified") or item.get("date") or "",
+        reverse=True,
+    )
+    progress_lines: List[str] = []
+    for entry in progress_entries:
+        date_label = entry.get("lastModified") or entry.get("date") or "Undated"
+        title = entry.get("title") or ("Feedback" if entry.get("entryType") == "feedback" else "Update")
+        body = []
+        author = entry.get("author")
+        if author:
+            body.append(f"Author: {author}")
+        if entry.get("entryType") == "feedback":
+            body.append(f"Audience: {feedback_export_audience_label(entry)}")
+        if body:
+            body.append("")
+        body.append((entry.get("content") or "").strip())
+        if entry.get("entryType") == "updates":
+            if entry.get("slidesUrl"):
+                body.extend(["", f"Slides: {entry.get('slidesUrl')}"])
+            visuals = render_supporting_visuals_for_export(
+                request,
+                normalize_visual_list(entry.get("svgUrls")) or [],
+                get_inline_visual_filenames(entry.get("content") or ""),
+            )
+            if visuals:
+                body.extend(["", "Supporting visuals:", "", *visuals])
+        append_markdown_entry(progress_lines, f"{date_label} — {title}", body)
+    append_markdown_section(lines, "Progress", progress_lines)
+
+    return "\n".join(lines).strip() + "\n"
+
+
 def can_add_project_feedback(
     user: Dict[str, Any],
     project: Dict[str, Any],
@@ -3028,6 +3268,40 @@ async def get_project(
         raise HTTPException(status_code=404, detail="Project not found")
     linked_person = await get_linked_person(user)
     return redact_project_feedback_for_viewer(item, user, linked_person)
+
+
+@api_router.get("/projects/{project_id}/export.md")
+async def export_project_markdown(
+    project_id: str,
+    request: Request,
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    item = await get_by_field("projects", "id", project_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    linked_person = await get_linked_person(user)
+    redacted_project = redact_project_feedback_for_viewer(item, user, linked_person)
+    people = await list_collection("people", limit=400)
+    milestones = await list_collection("milestones", limit=500)
+    concept_notes = await list_collection("conceptnotes", limit=200)
+    markdown = render_project_export_markdown(
+        request,
+        redacted_project,
+        user,
+        linked_person,
+        people,
+        milestones,
+        concept_notes,
+    )
+    exported_on = utc_now().strftime("%Y-%m-%d")
+    filename = safe_project_export_filename(project_id, exported_on)
+    logger.info("Project export requested user=%s project=%s", user.get("email") or user.get("id"), project_id)
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @api_router.post("/projects")

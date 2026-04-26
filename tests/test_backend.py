@@ -334,6 +334,140 @@ def test_project_visual_uploads_require_project_edit_access(client):
     assert allowed_delete.json()["deleted"] is True
 
 
+def test_project_markdown_export_requires_auth_and_handles_missing_project(client):
+    unauthenticated = client.get("/api/projects/sousbot/export.md")
+    assert unauthenticated.status_code == 401
+
+    login(client)
+    missing = client.get("/api/projects/not-a-project/export.md")
+    assert missing.status_code == 404
+
+
+def test_project_markdown_export_contains_core_record_and_safe_filename(client):
+    login(client)
+
+    response = client.get("/api/projects/recipegraph/export.md")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert 'filename="yard-project-recipegraph-' in response.headers["content-disposition"]
+    markdown = response.text
+    assert "# RecipeGraph" in markdown
+    assert "Snapshot exported on" in markdown
+    assert "Dr. Tomás Eriksson" in markdown
+    assert "Knowledge-graph reasoning over recipes and flavour structure." in markdown
+    assert "Seed milestone" in markdown
+    assert "https://example.org/recipegraph-slides.pdf" in markdown
+
+
+def test_project_markdown_export_feedback_redaction_matches_project_endpoint(client):
+    register_and_login(client, "a.osei@thornbridge.ac.uk", "Prof. Amara Osei")
+    feedback_payloads = [
+        {"title": "Export lead-only feedback", "content": "Just for the lead.", "audience": "lead", "includeReviewers": False},
+        {"title": "Export team feedback", "content": "For the team.", "audience": "team", "includeReviewers": False},
+        {"title": "Export review feedback", "content": "For programme support.", "audience": "team", "includeReviewers": True},
+        {"title": "Export lead plus support feedback", "content": "For lead and support.", "audience": "lead", "includeReviewers": True},
+    ]
+    all_titles = {payload["title"] for payload in feedback_payloads}
+    for payload in feedback_payloads:
+        created = client.post("/api/projects/sousbot/feedback", json=payload)
+        assert created.status_code == 200
+
+    personas = {
+        "k.asante@lakemere.ac.uk": "Dr. Kwame Asante",
+        "a.bakari@lakemere.ac.uk": "Aisha Bakari",
+        "a.osei@thornbridge.ac.uk": "Prof. Amara Osei",
+        "d.chen@aldhelm.ac.uk": "Prof. David Chen",
+        "n.adeyemi@thornbridge.ac.uk": "Nkechi Adeyemi",
+    }
+    for email, name in personas.items():
+        if email != "a.osei@thornbridge.ac.uk":
+            register_and_login(client, email, name)
+
+    for email in personas:
+        login_as(client, email)
+        project_response = client.get("/api/projects/sousbot")
+        export_response = client.get("/api/projects/sousbot/export.md")
+        assert project_response.status_code == 200
+        assert export_response.status_code == 200
+
+        visible_titles = {entry["title"] for entry in project_response.json()["feedback"]}
+        markdown = export_response.text
+        for title in all_titles:
+            assert (title in markdown) == (title in visible_titles)
+
+
+def test_project_markdown_export_includes_quiet_entries_without_surfacing(client):
+    register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
+    quiet_update = client.post(
+        "/api/projects/sousbot/updates",
+        json={
+            "title": "Quiet export update",
+            "content": "Stored in the project record without programme surfacing.",
+            "publish": False,
+        },
+    )
+    quiet_challenge = client.post(
+        "/api/projects/sousbot/challenges",
+        json={
+            "description": "Quiet export challenge",
+            "severity": "slowing",
+            "publish": False,
+        },
+    )
+    assert quiet_update.status_code == 200
+    assert quiet_challenge.status_code == 200
+
+    export_response = client.get("/api/projects/sousbot/export.md")
+    assert export_response.status_code == 200
+    markdown = export_response.text
+    assert "Quiet export update" in markdown
+    assert "Stored in the project record without programme surfacing." in markdown
+    assert "Quiet export challenge" in markdown
+    assert "Visibility: quiet" not in markdown
+
+    activity = client.get("/api/dashboard/activity")
+    assert activity.status_code == 200
+    activity_titles = {item["title"] for item in activity.json()}
+    assert "Quiet export update" not in activity_titles
+    assert "Quiet export challenge" not in activity_titles
+
+
+def test_project_markdown_export_visual_links_and_inline_dedup(client):
+    register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
+    inline_url = "http://testserver/api/uploads/visual/sousbot--inline.png"
+    support_url = "http://testserver/api/uploads/visual/sousbot--support.png"
+    created = client.post(
+        "/api/projects/sousbot/updates",
+        json={
+            "title": "Visual export update",
+            "content": f"Inline figure:\n\n![Inline figure]({inline_url}){{size=small}}",
+            "svgUrls": [inline_url, support_url],
+            "publish": True,
+        },
+    )
+    assert created.status_code == 200
+
+    export_response = client.get("/api/projects/sousbot/export.md")
+    assert export_response.status_code == 200
+    markdown = export_response.text
+    assert markdown.count("sousbot--inline.png") == 1
+    assert "sousbot--support.png" in markdown
+
+
+def test_project_markdown_export_related_concept_notes_do_not_leak_stewardship_fields(client):
+    login(client)
+
+    export_response = client.get("/api/projects/recipegraph/export.md")
+
+    assert export_response.status_code == 200
+    markdown = export_response.text
+    assert "Taste Perception Under Microgravity" in markdown
+    assert "activeUntil" not in markdown
+    assert "lastActiveExtension" not in markdown
+    assert "2026-05-10" not in markdown
+
+
 def test_startup_migrations_do_not_overwrite_runtime_project_or_people_changes(isolated_app):
     app, _ = isolated_app
 

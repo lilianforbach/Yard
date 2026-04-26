@@ -24,6 +24,7 @@ import ProjectModal from './components/app/ProjectModal';
 import ConceptNotePanel from './components/app/ConceptNotePanel';
 import EventPanel from './components/app/EventPanel';
 import ProjectFullPage from './components/app/ProjectFullPage';
+import ProjectExportPrintPage from './components/app/ProjectExportPrintPage';
 import PersonPanel from './components/app/PersonPanel';
 import Publications from './components/app/Publications';
 import Events from './components/app/Events';
@@ -455,9 +456,17 @@ function MainApp() {
   }
 
   return (
-    <DataProvider>
-      <AppShell />
-    </DataProvider>
+    <Routes>
+      <Route path="/projects/:projectId/export/print" element={<ProjectExportPrintPage />} />
+      <Route
+        path="/*"
+        element={(
+          <DataProvider>
+            <AppShell />
+          </DataProvider>
+        )}
+      />
+    </Routes>
   );
 }
 

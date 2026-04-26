@@ -134,6 +134,8 @@ Empty states should explain what belongs in the surface without implying failure
 - Publish means the item should resurface into shared programme attention.
 - Feedback should remain contextual and visibility-aware.
 - Challenges should be framed as coordination/support signals, not failures.
+- Export/download is for portability and stewardship, not reporting; project exports must reuse the same live visibility and feedback-redaction rules as the app.
+- Save quietly does not mean do not export; quiet content visible on a project page may appear in a project record export.
 - Needs attention should be used carefully and should point toward useful support.
 - Delayed and complete are acceptable for project work/milestones, but should not expand into productivity tracking.
 - Programme support is safer than reviewer/review queue language where the user-facing meaning is support and coordination.
