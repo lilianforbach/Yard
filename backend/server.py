@@ -4043,6 +4043,7 @@ async def get_dashboard_activity(
             "project": "",
             "context": "",
             "projectId": "",
+            "noteId": note.get("id", ""),
             "title": note.get("title", ""),
             "date": note.get("createdAt", ""),
             "author": build_concept_note_activity_author(note, people_by_id),

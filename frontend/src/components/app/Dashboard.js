@@ -213,7 +213,7 @@ function AccountAccessCard({
   );
 }
 
-export default function Dashboard({ onNavigate, onProjectClick, onPersonClick }) {
+export default function Dashboard({ onNavigate, onProjectClick, onNoteClick, onEventClick, onPersonClick }) {
   const { user, permissions } = useAuth();
   const {
     activity,
@@ -432,10 +432,10 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
           title: note.title,
           meta: contributorLabel,
           metaSecondary: sortDate ? formatDate(sortDate) : '',
-          onClick: () => onNavigate('conceptnotes', { note: note.id }),
+          onClick: () => (onNoteClick ? onNoteClick(note.id) : onNavigate('conceptnotes', { note: note.id })),
         };
       }),
-    [conceptNotes, getPerson, onNavigate]
+    [conceptNotes, getPerson, onNavigate, onNoteClick]
   );
 
   const recentPublications = useMemo(
@@ -461,9 +461,9 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         title: event.name,
         meta: event.location || '',
         metaSecondary: event.date ? formatDate(event.date) : '',
-        onClick: () => onNavigate('events', { event: event.id }),
+        onClick: () => (onEventClick ? onEventClick(event.id) : onNavigate('events', { event: event.id })),
       })),
-    [events, onNavigate]
+    [events, onEventClick, onNavigate]
   );
 
   const overviewHasData = (

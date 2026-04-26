@@ -247,6 +247,8 @@ const ACTIVITY_TYPE_LABELS = {
 
 export default function Projects({
   onProjectClick,
+  onNoteClick,
+  onEventClick,
   onPersonClick,
   onNavigate,
   mode = 'catalogue',
@@ -959,18 +961,26 @@ export default function Projects({
                           const handleClick = () => {
                             if (entry.projectId) {
                               onProjectClick(entry.projectId);
-                            } else if (entry.type === 'concept-note' && onNavigate) {
-                              onNavigate('conceptnotes');
-                            } else if (entry.type === 'event' && entry.eventId && onNavigate) {
-                              onNavigate('events', { event: entry.eventId });
+                            } else if (entry.type === 'concept-note') {
+                              if (entry.noteId && onNoteClick) {
+                                onNoteClick(entry.noteId);
+                              } else if (onNavigate) {
+                                onNavigate('conceptnotes', entry.noteId ? { note: entry.noteId } : undefined);
+                              }
+                            } else if (entry.type === 'event' && entry.eventId) {
+                              if (onEventClick) {
+                                onEventClick(entry.eventId);
+                              } else if (onNavigate) {
+                                onNavigate('events', { event: entry.eventId });
+                              }
                             } else if (entry.type === 'publication' && onNavigate) {
                               onNavigate('publications');
                             }
                           };
                           const isClickableEntry = Boolean(entry.projectId)
-                            || entry.type === 'concept-note'
-                            || (entry.type === 'event' && entry.eventId)
-                            || entry.type === 'publication';
+                            || (entry.type === 'concept-note' && (entry.noteId || onNavigate))
+                            || (entry.type === 'event' && entry.eventId && (onEventClick || onNavigate))
+                            || (entry.type === 'publication' && onNavigate);
 
                           if (isClickableEntry) {
                             return (

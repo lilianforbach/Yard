@@ -21,6 +21,8 @@ import Dashboard from './components/app/Dashboard';
 import People from './components/app/People';
 import Projects from './components/app/Projects';
 import ProjectModal from './components/app/ProjectModal';
+import ConceptNotePanel from './components/app/ConceptNotePanel';
+import EventPanel from './components/app/EventPanel';
 import ProjectFullPage from './components/app/ProjectFullPage';
 import PersonPanel from './components/app/PersonPanel';
 import Publications from './components/app/Publications';
@@ -158,8 +160,17 @@ function AppShell() {
   const projectWorkspaceMode = !isMobile && activeSection === 'projects' && Boolean(projectModalId) && !isProjectDetailRoute;
   const conceptWorkspaceMode = !isMobile && activeSection === 'conceptnotes' && Boolean(notePanelId);
   const eventWorkspaceMode = !isMobile && activeSection === 'events' && Boolean(eventPanelId);
+  const globalConceptPanelOpen = Boolean(notePanelId) && activeSection !== 'conceptnotes';
+  const globalEventPanelOpen = Boolean(eventPanelId) && activeSection !== 'events';
   const workspaceWithPanel = projectWorkspaceMode || conceptWorkspaceMode || eventWorkspaceMode;
-  const effectiveSidebarCollapsed = isMobile ? false : (sidebarCollapsed || projectWorkspaceMode || conceptWorkspaceMode || eventWorkspaceMode);
+  const effectiveSidebarCollapsed = isMobile ? false : (
+    sidebarCollapsed
+    || projectWorkspaceMode
+    || conceptWorkspaceMode
+    || eventWorkspaceMode
+    || globalConceptPanelOpen
+    || globalEventPanelOpen
+  );
   const pageMeta = isProjectDetailRoute
     ? {
         title: 'Project',
@@ -202,7 +213,33 @@ function AppShell() {
     }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('person');
+    nextParams.delete('note');
+    nextParams.delete('event');
     nextParams.set('project', projectId);
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  const handleConceptNoteClick = (noteId) => {
+    if (!isMobile) {
+      setSidebarCollapsed(true);
+    }
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('person');
+    nextParams.delete('project');
+    nextParams.delete('event');
+    nextParams.set('note', noteId);
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  const handleEventClick = (eventId) => {
+    if (!isMobile) {
+      setSidebarCollapsed(true);
+    }
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('person');
+    nextParams.delete('project');
+    nextParams.delete('note');
+    nextParams.set('event', eventId);
     setSearchParams(nextParams, { replace: true });
   };
 
@@ -230,6 +267,14 @@ function AppShell() {
 
   const handleCloseProjectModal = () => {
     updateSearchParam('project', null);
+  };
+
+  const handleCloseConceptNotePanel = () => {
+    updateSearchParam('note', null);
+  };
+
+  const handleCloseEventPanel = () => {
+    updateSearchParam('event', null);
   };
 
   const handleClosePersonPanel = () => {
@@ -311,6 +356,8 @@ function AppShell() {
                   <Dashboard
                     onNavigate={handleNavigate}
                     onProjectClick={handleProjectClick}
+                    onNoteClick={handleConceptNoteClick}
+                    onEventClick={handleEventClick}
                     onPersonClick={handlePersonClick}
                   />
                 }
@@ -322,6 +369,8 @@ function AppShell() {
                   <Projects
                     mode="catalogue"
                     onProjectClick={handleProjectClick}
+                    onNoteClick={handleConceptNoteClick}
+                    onEventClick={handleEventClick}
                     onPersonClick={handlePersonClick}
                     onNavigate={handleNavigate}
                     panelOpen={!isMobile && Boolean(projectModalId)}
@@ -335,7 +384,7 @@ function AppShell() {
               <Route
                 path="/review"
                 element={projectContextAccess
-                  ? <Projects mode="review-only" onProjectClick={handleProjectClick} onPersonClick={handlePersonClick} onNavigate={handleNavigate} />
+                  ? <Projects mode="review-only" onProjectClick={handleProjectClick} onNoteClick={handleConceptNoteClick} onEventClick={handleEventClick} onPersonClick={handlePersonClick} onNavigate={handleNavigate} />
                   : <Navigate to="/projects" replace />}
               />
               <Route path="/publications" element={<Publications />} />
@@ -366,6 +415,21 @@ function AppShell() {
           personId={personPanelId}
           onClose={handleClosePersonPanel}
           onProjectClick={handleViewFullProject}
+        />
+      )}
+
+      {globalConceptPanelOpen && (
+        <ConceptNotePanel
+          noteId={notePanelId}
+          onClose={handleCloseConceptNotePanel}
+          onNoteClick={handleConceptNoteClick}
+        />
+      )}
+
+      {globalEventPanelOpen && (
+        <EventPanel
+          eventId={eventPanelId}
+          onClose={handleCloseEventPanel}
         />
       )}
     </div>

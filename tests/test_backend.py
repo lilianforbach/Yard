@@ -624,6 +624,23 @@ def test_programme_data_read_endpoints_require_auth(client):
         assert response.status_code == 401, route
 
 
+def test_dashboard_activity_concept_notes_include_note_id(client):
+    login(client)
+
+    notes_response = client.get("/api/conceptnotes")
+    assert notes_response.status_code == 200
+    note = notes_response.json()[0]
+
+    activity_response = client.get("/api/dashboard/activity")
+    assert activity_response.status_code == 200
+    concept_note_entry = next(
+        entry for entry in activity_response.json()
+        if entry.get("type") == "concept-note" and entry.get("title") == note["title"]
+    )
+
+    assert concept_note_entry["noteId"] == note["id"]
+
+
 def test_project_updates_and_challenges_persist_to_store(client):
     register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
 
