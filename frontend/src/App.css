@@ -4276,13 +4276,28 @@ textarea.editable-field-input { min-height: 4rem; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
+  min-width: 1.75rem;
   min-height: 3rem;
+  cursor: pointer;
 }
 
 .svg-row-select input {
+  position: relative;
+  z-index: 1;
   width: 1rem;
   height: 1rem;
   accent-color: var(--color-aldhelm);
+  cursor: pointer;
+}
+
+.svg-row-select:has(input:disabled) {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.svg-row-select:has(input:disabled) input {
+  cursor: default;
 }
 
 .svg-draft-thumb {

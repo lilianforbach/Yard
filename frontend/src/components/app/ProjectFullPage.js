@@ -486,13 +486,15 @@ function SupportingVisualUploadsFields({
               return (
                 <div key={url} className="svg-draft-item">
                   {insertLayout === 'row' && canInsertRows ? (
-                    <label className="svg-row-select">
+                    <label
+                      className={`svg-row-select ${selectedForRow ? 'selected' : ''}`}
+                    >
                       <input
                         type="checkbox"
                         checked={selectedForRow}
-                        onChange={(event) => {
+                        onChange={() => {
                           setSelectedRowUrls((current) => {
-                            if (!event.target.checked) {
+                            if (current.includes(url)) {
                               return current.filter((selectedUrl) => selectedUrl !== url);
                             }
                             return [...current.filter((selectedUrl) => selectedUrl !== url), url].slice(-2);
@@ -505,7 +507,6 @@ function SupportingVisualUploadsFields({
                   ) : null}
                   <img src={url} alt="" className="svg-draft-thumb" />
                   <div className="svg-draft-copy">
-                    <span className="svg-draft-label">{visualLabel}</span>
                     <span className="svg-draft-filename">{getVisualFilename(url)}</span>
                     {onInsertVisual ? (
                       <input
@@ -513,7 +514,7 @@ function SupportingVisualUploadsFields({
                         className="svg-draft-caption-input"
                         value={caption}
                         onChange={(event) => setVisualCaptions((current) => ({ ...current, [url]: event.target.value }))}
-                        placeholder="Caption or alt text"
+                        placeholder={visualLabel}
                         disabled={disabled}
                       />
                     ) : null}
