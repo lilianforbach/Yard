@@ -2680,8 +2680,7 @@ textarea.editable-field-input { min-height: 4rem; }
 .project-review-title-button:focus-visible {
   color: var(--color-aldhelm);
   outline: none;
-  text-decoration: underline;
-  text-underline-offset: 0.16em;
+  text-decoration: none;
 }
 .project-review-inline-meta {
   display: flex;
@@ -2826,8 +2825,15 @@ textarea.editable-field-input { min-height: 4rem; }
   font: inherit;
   cursor: pointer;
 }
-.activity-item.clickable:hover {
+.activity-item.clickable:hover,
+.activity-item.clickable:focus-visible {
   background: var(--color-hover);
+  color: inherit;
+  text-decoration: none;
+}
+.activity-item.clickable:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--color-aldhelm) 45%, transparent);
+  outline-offset: 2px;
 }
 
 /* ─── TEAMS VIEW ─────────────────────────────────────────── */
