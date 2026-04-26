@@ -579,7 +579,7 @@ export default function Dashboard({ onNavigate, onProjectClick, onNoteClick, onE
               icon={FileText}
               tone="updates"
               moreLabel="See more in Project Context"
-              onMore={() => onNavigate('review', { tab: 'activity' })}
+              onMore={() => onNavigate('review', { tab: 'activity', q: 'Update' })}
             />
             <DashboardStreamCard
               title="Challenges"

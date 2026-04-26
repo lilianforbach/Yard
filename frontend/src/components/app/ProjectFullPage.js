@@ -1828,7 +1828,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
               <button type="button" className="save-mode-btn tertiary" onClick={dismissProgressComposer} disabled={progressSubmitting || svgUploading}>Cancel</button>
               {showProgressForm === 'feedback' ? (
                 <button type="button" className="save-mode-btn publish" onClick={() => handleProgressSubmit(false)} disabled={progressSubmitting || svgUploading}>
-                  {progressSubmitting ? 'Saving...' : 'Save Feedback'}
+                  {progressSubmitting ? 'Saving...' : 'Save'}
                 </button>
               ) : (
                 <>
@@ -1938,7 +1938,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                   onClick={() => saveEntryEdit(false)}
                   disabled={editingEntrySaveDisabled}
                 >
-                  {editingEntrySubmitting && editingEntrySubmitMode === 'feedback' ? 'Saving...' : 'Save Feedback'}
+                  {editingEntrySubmitting && editingEntrySubmitMode === 'feedback' ? 'Saving...' : 'Save'}
                 </button>
               ) : (
                 <>

@@ -289,11 +289,19 @@ export default function Projects({
       : 'overview';
   const selectedProjectId = searchParams.get('project');
   const requestedProjectContextTab = searchParams.get('tab');
+  const requestedActivityQuery = searchParams.get('q');
 
   useEffect(() => {
     if (activeView !== 'review') return;
     setReviewView(getProjectContextTab(requestedProjectContextTab));
   }, [activeView, requestedProjectContextTab]);
+
+  useEffect(() => {
+    if (activeView !== 'review') return;
+    if (getProjectContextTab(requestedProjectContextTab) !== 'activity') return;
+    if (requestedActivityQuery == null) return;
+    setActivitySearch(requestedActivityQuery);
+  }, [activeView, requestedProjectContextTab, requestedActivityQuery]);
 
   const openFullProjectPage = (projectId) => {
     navigate(`/projects/${projectId}`);
