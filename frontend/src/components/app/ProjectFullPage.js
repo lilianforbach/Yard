@@ -87,7 +87,7 @@ function getFeedbackDisplayTitle(entry) {
   return excerpt.length > 88 ? `${excerpt.slice(0, 85).trim()}...` : excerpt;
 }
 
-const MAX_VISUALS = 5;
+const MAX_VISUALS = 8;
 const MAX_VISUAL_UPLOAD_BYTES = 5 * 1024 * 1024;
 const VISUAL_UPLOAD_ACCEPT = '.svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg';
 const INLINE_IMAGE_SIZE_OPTIONS = [
@@ -413,7 +413,9 @@ function SupportingVisualUploadsFields({
         <div className="form-field">
           <div className="supporting-visuals-subheading">
             <label>Upload</label>
-            <span className="supporting-visuals-count">{visualCount} / {MAX_VISUALS} files</span>
+            {visualCount > 0 ? (
+              <span className="supporting-visuals-count">{visualCount} / {MAX_VISUALS} files</span>
+            ) : null}
           </div>
           <input
             type="file"
