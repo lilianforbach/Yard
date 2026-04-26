@@ -90,6 +90,11 @@ function getFeedbackDisplayTitle(entry) {
 const MAX_VISUALS = 5;
 const MAX_VISUAL_UPLOAD_BYTES = 5 * 1024 * 1024;
 const VISUAL_UPLOAD_ACCEPT = '.svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg';
+const INLINE_IMAGE_SIZE_OPTIONS = [
+  { value: 'small', label: 'Small' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'large', label: 'Large' },
+];
 const CHALLENGE_SEVERITY_OPTIONS = [
   { value: 'slowing', label: 'Slowing' },
   { value: 'blocking', label: 'Blocking' },
@@ -146,6 +151,61 @@ function getSvgUrls(record) {
     return [record.svgUrl];
   }
   return [];
+}
+
+function normalizeInlineImageUrl(rawValue) {
+  return (rawValue || '').trim();
+}
+
+function getInlineImageUrls(content) {
+  if (!content) return new Set();
+  const urls = new Set();
+  const imagePattern = /!\[[^\]]*]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  let match = imagePattern.exec(content);
+  while (match) {
+    const normalized = normalizeInlineImageUrl(match[1]);
+    if (normalized) urls.add(normalized);
+    match = imagePattern.exec(content);
+  }
+  return urls;
+}
+
+function getUninsertedSvgUrls(record) {
+  const inlineUrls = getInlineImageUrls(record?.content || '');
+  return getSvgUrls(record).filter((url) => !inlineUrls.has(normalizeInlineImageUrl(url)));
+}
+
+function getVisualFilename(url) {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const filename = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || '');
+    return filename || url;
+  } catch {
+    return url.split('/').filter(Boolean).pop() || url;
+  }
+}
+
+function escapeMarkdownImageAlt(value) {
+  return (value || '')
+    .replace(/[\[\]\n\r]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildMarkdownImage(url, caption, fallbackLabel, size = 'medium') {
+  const alt = escapeMarkdownImageAlt(caption) || fallbackLabel;
+  const normalizedSize = INLINE_IMAGE_SIZE_OPTIONS.some((option) => option.value === size) ? size : 'medium';
+  return `\n\n![${alt}](${url}){size=${normalizedSize}}\n\n`;
+}
+
+function buildMarkdownImageRow(images) {
+  const lines = images.map((image, index) => {
+    const alt = escapeMarkdownImageAlt(image.caption) || `Visual ${index + 1}`;
+    const size = INLINE_IMAGE_SIZE_OPTIONS.some((option) => option.value === image.size) ? image.size : 'medium';
+    return `![${alt}](${image.url}){size=${size}}`;
+  });
+  return `\n\n:::yard-image-row\n${lines.join('\n')}\n:::\n\n`;
 }
 
 function getTodayDateInputValue() {
@@ -325,11 +385,20 @@ function SupportingVisualUploadsFields({
   visualUrls,
   onUploadFiles,
   onRemoveVisual,
+  onInsertVisual = null,
+  onInsertVisualRow = null,
   disabled,
   uploading,
   description,
 }) {
   const visualCount = visualUrls.length;
+  const [visualCaptions, setVisualCaptions] = useState({});
+  const [visualSizes, setVisualSizes] = useState({});
+  const [insertLayout, setInsertLayout] = useState('single');
+  const [selectedRowUrls, setSelectedRowUrls] = useState([]);
+  const canInsertRows = Boolean(onInsertVisualRow) && visualUrls.length >= 2;
+  const activeSelectedRowUrls = selectedRowUrls.filter((url) => visualUrls.includes(url));
+  const canInsertSelectedRow = canInsertRows && activeSelectedRowUrls.length === 2;
 
   return (
     <div className="form-field supporting-visuals-section">
@@ -363,20 +432,132 @@ function SupportingVisualUploadsFields({
 
         {visualUrls.length > 0 && (
           <div className="svg-draft-list">
-            {visualUrls.map((url, index) => (
-              <div key={url} className="svg-draft-item">
-                <span className="svg-draft-label">Visual {index + 1}</span>
-                <a href={url} target="_blank" rel="noopener noreferrer" className="slides-open-link">Open</a>
-                <button
-                  type="button"
-                  className="svg-remove-btn"
-                  onClick={() => onRemoveVisual(index)}
-                  aria-label={`Remove visual ${index + 1}`}
-                >
-                  <Trash2 size={14} />
-                </button>
+            {onInsertVisual && canInsertRows ? (
+              <div className="svg-layout-toolbar">
+                <span className="svg-layout-label">Insert layout</span>
+                <div className="svg-draft-size-toggle" role="radiogroup" aria-label="Insert image layout">
+                  <button
+                    type="button"
+                    className={`svg-draft-size-btn ${insertLayout === 'single' ? 'active' : ''}`}
+                    onClick={() => setInsertLayout('single')}
+                    disabled={disabled}
+                    aria-checked={insertLayout === 'single'}
+                    role="radio"
+                  >
+                    Single
+                  </button>
+                  <button
+                    type="button"
+                    className={`svg-draft-size-btn ${insertLayout === 'row' ? 'active' : ''}`}
+                    onClick={() => setInsertLayout('row')}
+                    disabled={disabled}
+                    aria-checked={insertLayout === 'row'}
+                    role="radio"
+                  >
+                    Row
+                  </button>
+                </div>
+                {insertLayout === 'row' ? (
+                  <button
+                    type="button"
+                    className="save-mode-btn tertiary svg-insert-btn"
+                    onClick={() => {
+                      const images = activeSelectedRowUrls.map((url) => ({
+                        url,
+                        caption: visualCaptions[url] || '',
+                        size: visualSizes[url] || 'medium',
+                      }));
+                      onInsertVisualRow(images);
+                    }}
+                    disabled={disabled || !canInsertSelectedRow}
+                  >
+                    Insert row
+                  </button>
+                ) : null}
               </div>
-            ))}
+            ) : null}
+            {visualUrls.map((url, index) => {
+              const caption = visualCaptions[url] || '';
+              const size = visualSizes[url] || 'medium';
+              const visualLabel = `Visual ${index + 1}`;
+              const selectedForRow = activeSelectedRowUrls.includes(url);
+              return (
+                <div key={url} className="svg-draft-item">
+                  {insertLayout === 'row' && canInsertRows ? (
+                    <label className="svg-row-select">
+                      <input
+                        type="checkbox"
+                        checked={selectedForRow}
+                        onChange={(event) => {
+                          setSelectedRowUrls((current) => {
+                            if (!event.target.checked) {
+                              return current.filter((selectedUrl) => selectedUrl !== url);
+                            }
+                            return [...current.filter((selectedUrl) => selectedUrl !== url), url].slice(-2);
+                          });
+                        }}
+                        disabled={disabled}
+                        aria-label={`Select ${visualLabel} for image row`}
+                      />
+                    </label>
+                  ) : null}
+                  <img src={url} alt="" className="svg-draft-thumb" />
+                  <div className="svg-draft-copy">
+                    <span className="svg-draft-label">{visualLabel}</span>
+                    <span className="svg-draft-filename">{getVisualFilename(url)}</span>
+                    {onInsertVisual ? (
+                      <input
+                        type="text"
+                        className="svg-draft-caption-input"
+                        value={caption}
+                        onChange={(event) => setVisualCaptions((current) => ({ ...current, [url]: event.target.value }))}
+                        placeholder="Caption or alt text"
+                        disabled={disabled}
+                      />
+                    ) : null}
+                    {onInsertVisual ? (
+                      <div className="svg-draft-size-toggle" role="radiogroup" aria-label={`${visualLabel} image size`}>
+                        {INLINE_IMAGE_SIZE_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`svg-draft-size-btn ${size === option.value ? 'active' : ''}`}
+                            onClick={() => setVisualSizes((current) => ({ ...current, [url]: option.value }))}
+                            disabled={disabled}
+                            aria-checked={size === option.value}
+                            role="radio"
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="svg-draft-actions">
+                    {onInsertVisual ? (
+                      <button
+                        type="button"
+                        className="save-mode-btn tertiary svg-insert-btn"
+                        onClick={() => onInsertVisual(url, caption, index, size)}
+                        disabled={disabled || insertLayout === 'row'}
+                      >
+                        Insert
+                      </button>
+                    ) : null}
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="slides-open-link">Open</a>
+                    <button
+                      type="button"
+                      className="svg-remove-btn"
+                      onClick={() => onRemoveVisual(index)}
+                      aria-label={`Remove visual ${index + 1}`}
+                      disabled={disabled}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
@@ -480,6 +661,8 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const [showExpandedMilestones, setShowExpandedMilestones] = useState(false);
   const [projectSvgIndex, setProjectSvgIndex] = useState(0);
   const [entrySvgIndexes, setEntrySvgIndexes] = useState({});
+  const progressEditorRef = useRef(null);
+  const editingEditorRef = useRef(null);
 
   const saveEntryEdit = useCallback(async (publish = false) => {
     if (!editingEntry || editingEntrySubmittingRef.current) return;
@@ -735,6 +918,42 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
       deleteUploadedSvgIfUnused(removedUrl);
     }
   }, [deleteUploadedSvgIfUnused, projectSvgDrafts, removeSvgUrlAtIndex]);
+
+  const insertProgressVisual = useCallback((url, caption, index, size) => {
+    const markdown = buildMarkdownImage(url, caption, `Visual ${index + 1}`, size);
+    if (progressEditorRef.current?.insertText) {
+      progressEditorRef.current.insertText(markdown);
+      return;
+    }
+    setProgressForm((current) => ({ ...current, content: `${current.content || ''}${markdown}` }));
+  }, []);
+
+  const insertProgressVisualRow = useCallback((images) => {
+    const markdown = buildMarkdownImageRow(images);
+    if (progressEditorRef.current?.insertText) {
+      progressEditorRef.current.insertText(markdown);
+      return;
+    }
+    setProgressForm((current) => ({ ...current, content: `${current.content || ''}${markdown}` }));
+  }, []);
+
+  const insertEditingVisual = useCallback((url, caption, index, size) => {
+    const markdown = buildMarkdownImage(url, caption, `Visual ${index + 1}`, size);
+    if (editingEditorRef.current?.insertText) {
+      editingEditorRef.current.insertText(markdown);
+      return;
+    }
+    setEditingEntry((current) => current ? { ...current, content: `${current.content || ''}${markdown}` } : current);
+  }, []);
+
+  const insertEditingVisualRow = useCallback((images) => {
+    const markdown = buildMarkdownImageRow(images);
+    if (editingEditorRef.current?.insertText) {
+      editingEditorRef.current.insertText(markdown);
+      return;
+    }
+    setEditingEntry((current) => current ? { ...current, content: `${current.content || ''}${markdown}` } : current);
+  }, []);
 
   const dismissProgressComposer = useCallback(async () => {
     if (!showProgressForm || progressSubmitting || svgUploading) return;
@@ -1362,6 +1581,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
               {visibleProgressEntries
                 .map((entry, i) => {
                   const canEditEntry = access.canEditProjectEntry(entry) && (entry.entryType !== 'feedback' || Boolean(entry.id));
+                  const uninsertedVisualUrls = entry.entryType === 'updates' ? getUninsertedSvgUrls(entry) : [];
                   return (
                     <div key={`${entry.entryType}-${entry.id || entry.origIndex || i}`} className={`update-item ${entry.entryType === 'feedback' ? 'feedback-item' : ''} ${expandedUpdates[i] ? 'expanded' : ''}`}>
                       <div className="update-header" onClick={() => setExpandedUpdates(prev => ({ ...prev, [i]: !prev[i] }))}>
@@ -1432,10 +1652,10 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                               </div>
                             </div>
                           )}
-                          {entry.entryType === 'updates' && getSvgUrls(entry).length > 0 && (
+                          {entry.entryType === 'updates' && uninsertedVisualUrls.length > 0 && (
                             <div className="entry-svg-block">
                               <SvgCarousel
-                                urls={getSvgUrls(entry)}
+                                urls={uninsertedVisualUrls}
                                 index={entrySvgIndexes[i] || 0}
                                 onChange={(nextIndex) => setEntrySvgIndexes((current) => ({ ...current, [i]: nextIndex }))}
                                 label={`${entry.title} supporting visual`}
@@ -1579,6 +1799,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
             <div className="form-field">
               <label>Content</label>
               <LatexTextarea
+                ref={progressEditorRef}
                 value={progressForm.content}
                 onChange={(value) => setProgressForm({ ...progressForm, content: value })}
                 rows={10}
@@ -1593,6 +1814,8 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                 visualUrls={progressForm.svgUrls}
                 onUploadFiles={handleProgressSvgUpload}
                 onRemoveVisual={removeProgressSvg}
+                onInsertVisual={insertProgressVisual}
+                onInsertVisualRow={insertProgressVisualRow}
                 disabled={progressSubmitting}
                 uploading={svgUploading}
                 description="Figures, diagrams, charts, and photos to include with this update."
@@ -1663,6 +1886,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
             <div className="form-field">
               <label>Content</label>
               <LatexTextarea
+                ref={editingEditorRef}
                 value={editingEntry.content}
                 onChange={(value) => setEditingEntry({ ...editingEntry, content: value })}
                 rows={12}
@@ -1694,6 +1918,8 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                 visualUrls={editingEntry.svgUrls || []}
                 onUploadFiles={handleEditSvgUpload}
                 onRemoveVisual={removeEditingSvg}
+                onInsertVisual={insertEditingVisual}
+                onInsertVisualRow={insertEditingVisualRow}
                 disabled={editingEntrySubmitting}
                 uploading={svgUploading}
                 description="Figures, diagrams, charts, and photos to include with this update."

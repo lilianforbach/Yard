@@ -3542,6 +3542,43 @@ textarea.editable-field-input { min-height: 4rem; }
   line-height: 1.6;
   color: var(--color-text-light);
 }
+.latex-content-figure {
+  display: block;
+  width: min(100%, 560px);
+  margin: 1rem auto;
+}
+.latex-content-figure-small {
+  width: min(100%, 360px);
+}
+.latex-content-figure-large {
+  width: min(100%, 760px);
+}
+.latex-content-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+  background: var(--color-card-soft);
+}
+.latex-content-caption {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: var(--color-text-light);
+}
+.latex-content-image-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin: 1rem 0;
+}
+.latex-content-image-row .latex-content-figure {
+  width: 100%;
+  margin: 0;
+}
 .latex-content > *:first-child { margin-top: 0; }
 .latex-content > *:last-child { margin-bottom: 0; }
 .latex-content p,
@@ -3630,6 +3667,13 @@ textarea.editable-field-input { min-height: 4rem; }
   color: var(--color-text);
   font-weight: 600;
 }
+
+@media (max-width: 640px) {
+  .latex-content-image-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .latex-content-empty {
   margin: 0;
   font-size: 0.8rem;
@@ -4202,14 +4246,61 @@ textarea.editable-field-input { min-height: 4rem; }
   margin-top: 0.2rem;
 }
 
-.svg-draft-item {
+.svg-layout-toolbar {
   display: flex;
   align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.55rem;
+  background: var(--color-card);
+}
+
+.svg-layout-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-light);
+}
+
+.svg-draft-item {
+  display: flex;
+  align-items: flex-start;
   gap: 0.65rem;
   padding: 0.55rem 0.7rem;
   border: 1px solid var(--color-border);
   border-radius: 0.6rem;
   background: var(--color-bg-soft);
+}
+
+.svg-row-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3rem;
+}
+
+.svg-row-select input {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-aldhelm);
+}
+
+.svg-draft-thumb {
+  flex: 0 0 auto;
+  width: 3rem;
+  height: 3rem;
+  object-fit: cover;
+  border: 1px solid var(--color-border);
+  border-radius: 0.45rem;
+  background: var(--color-card);
+}
+
+.svg-draft-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .svg-draft-label {
@@ -4218,8 +4309,65 @@ textarea.editable-field-input { min-height: 4rem; }
   color: var(--color-text);
 }
 
+.svg-draft-filename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.72rem;
+  color: var(--color-text-light);
+}
+
+.svg-draft-caption-input {
+  width: 100%;
+  min-width: 0;
+  margin-top: 0.15rem;
+}
+
+.svg-draft-size-toggle {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 0.2rem;
+  padding: 0.12rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.45rem;
+  background: var(--color-input-bg);
+}
+
+.svg-draft-size-btn {
+  min-height: 1.6rem;
+  padding: 0.2rem 0.5rem;
+  border: none;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: var(--color-text-light);
+  font-size: 0.7rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.svg-draft-size-btn.active {
+  background: var(--color-aldhelm);
+  color: #fff;
+}
+
+.svg-draft-size-btn:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.svg-draft-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.svg-insert-btn {
+  min-height: 1.85rem;
+  padding: 0.25rem 0.65rem;
+}
+
 .svg-remove-btn {
-  margin-left: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
