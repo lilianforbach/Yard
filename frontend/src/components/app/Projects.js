@@ -825,7 +825,7 @@ export default function Projects({
               </div>
 
               <p className="projects-review-helper-copy">
-                Projects with current challenges are shown first. Projects without current challenges remain visible below for context.
+                Projects ordered by recent challenges.
               </p>
 
               <div className="projects-review-list">
