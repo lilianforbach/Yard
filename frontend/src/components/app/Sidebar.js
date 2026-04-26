@@ -109,17 +109,19 @@ export default function Sidebar({
               <UserRound size={16} />
               {!collapsed && <span>My Profile</span>}
             </button>
-            <button
-              type="button"
-              data-testid="my-projects-shortcut"
-              className="sidebar-shortcut-btn"
-              onClick={onOpenMyProjects}
-              title="My Projects"
-              aria-label={`Open My Projects${myProjectsCount ? `, ${myProjectsCount} linked` : ''}`}
-            >
-              <FolderOpen size={16} />
-              {!collapsed && <span>My Projects</span>}
-            </button>
+            {myProjectsCount > 0 ? (
+              <button
+                type="button"
+                data-testid="my-projects-shortcut"
+                className="sidebar-shortcut-btn"
+                onClick={onOpenMyProjects}
+                title="My Projects"
+                aria-label={`Open My Projects, ${myProjectsCount} linked`}
+              >
+                <FolderOpen size={16} />
+                {!collapsed && <span>My Projects</span>}
+              </button>
+            ) : null}
           </div>
         )}
         {!collapsed && (

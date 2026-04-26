@@ -41,15 +41,33 @@ export default function Events({ onPanelOpen }) {
     });
   }, [events, filter, search]);
 
+  const selectedEvent = useMemo(
+    () => events.find((event) => event.id === selectedEventId),
+    [events, selectedEventId]
+  );
+
   useEffect(() => {
-    if (selectedEventId && !filtered.find((event) => event.id === selectedEventId)) {
+    if (!selectedEventId || loading) return;
+
+    if (!selectedEvent) {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('event');
       setSearchParams(nextParams, { replace: true });
+      return;
     }
-  }, [filtered, searchParams, selectedEventId, setSearchParams]);
 
-  const selectedEvent = filtered.find(e => e.id === selectedEventId);
+    if (filter !== 'all') {
+      const targetFilter = isEventPast(selectedEvent)
+        ? 'past'
+        : isEventUpcoming(selectedEvent)
+          ? 'upcoming'
+          : 'all';
+      if (filter !== targetFilter) {
+        setFilter(targetFilter);
+      }
+    }
+  }, [filter, loading, searchParams, selectedEvent, selectedEventId, setSearchParams]);
+
   const closeSelectedEvent = () => {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('event');

@@ -528,7 +528,7 @@ export default function Dashboard({ onNavigate, onProjectClick, onNoteClick, onE
       {currentView === 'maintenance' ? (
         <div className="dash-maintenance-shell">
           <div className="dash-maintenance-intro">
-            <p>Keep profiles, access, projects, and concept notes quietly up to date without turning the shared dashboard into a review queue.</p>
+            <p>Keep profiles, access, projects, and concept notes quietly up to date without turning the shared dashboard into a management surface.</p>
           </div>
           <div className="dash-maintenance-grid">
             {maintenanceCards.map((card) => (
