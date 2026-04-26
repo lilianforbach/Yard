@@ -1228,6 +1228,49 @@ def test_concept_note_updates_require_contributor_or_admin(client):
     assert allowed_update.json()["nextSteps"] == "Updated during a contributor integration test."
 
 
+def test_concept_note_active_until_is_redacted_for_non_review_users(client):
+    register_and_login(client, "a.bakari@lakemere.ac.uk", "Aisha Bakari")
+
+    notes_response = client.get("/api/conceptnotes")
+    assert notes_response.status_code == 200
+    assert notes_response.json()
+    assert all("activeUntil" not in note for note in notes_response.json())
+
+
+def test_concept_note_last_active_extension_is_admin_only(client):
+    login(client)
+    notes_response = client.get("/api/conceptnotes")
+    assert notes_response.status_code == 200
+    note_id = notes_response.json()[0]["id"]
+
+    extended = client.post(f"/api/conceptnotes/{note_id}/extend-active")
+    assert extended.status_code == 200
+    assert "lastActiveExtension" in extended.json()
+
+    register_and_login(client, "k.yamamoto@lakemere.ac.uk", "Prof. Kenji Yamamoto")
+    reviewer_notes = client.get("/api/conceptnotes")
+    assert reviewer_notes.status_code == 200
+    reviewer_note = next(note for note in reviewer_notes.json() if note["id"] == note_id)
+
+    assert "activeUntil" in reviewer_note
+    assert "lastActiveExtension" not in reviewer_note
+
+
+def test_concept_note_contributor_edits_must_keep_editor_included(client):
+    register_and_login(client, "p.ramanathan@lakemere.ac.uk", "Dr. Priya Ramanathan")
+    notes_response = client.get("/api/conceptnotes")
+    assert notes_response.status_code == 200
+    note = next(note for note in notes_response.json() if note["createdBy"] == "priya")
+
+    removed_self = client.put(
+        f"/api/conceptnotes/{note['id']}",
+        json={"contributors": ["kwame"]},
+    )
+
+    assert removed_self.status_code == 422
+    assert removed_self.json()["detail"] == "Concept note contributors must include the signed-in user"
+
+
 def test_concept_note_stewardship_fields_require_admin(client):
     register_and_login(client, "a.bakari@lakemere.ac.uk", "Aisha Bakari")
     notes_response = client.get("/api/conceptnotes")
