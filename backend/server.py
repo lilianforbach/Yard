@@ -52,7 +52,7 @@ DEFAULT_FRONTEND_ORIGINS = [
 DEFAULT_JWT_SECRET = "yard-dev-secret-change-me-2026-please"
 DEFAULT_ADMIN_PASSWORD = "YardAccess2026!"
 MAX_VISUAL_UPLOAD_BYTES = 5 * 1024 * 1024
-MAX_VISUALS_PER_ITEM = 5
+MAX_VISUALS_PER_ITEM = 8
 PASSWORD_MIN_LENGTH = 10
 TEMP_PASSWORD_EXPIRY_HOURS = 72
 INVITE_LINK_EXPIRY_HOURS = 168
@@ -406,6 +406,116 @@ def parse_optional_datetime(value: Optional[str]) -> Optional[datetime]:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed
+
+
+LEGACY_PERSON_LINK_FIELDS = ("website", "github", "substack", "orcid")
+
+
+def normalize_legacy_person_link_value(link_type: str, url: str) -> str:
+    cleaned = (url or "").strip()
+    if not cleaned:
+        return ""
+    if link_type == "orcid":
+        return re.sub(r"^https?://orcid\.org/", "", cleaned, flags=re.IGNORECASE).rstrip("/")
+    return cleaned
+
+
+def get_visible_person_link_types(person: Dict[str, Any]) -> set[str]:
+    links = person.get("links")
+    if isinstance(links, list):
+        link_types = {
+            str(link.get("type") or "").strip()
+            for link in links
+            if isinstance(link, dict) and str(link.get("url") or "").strip()
+        }
+        if link_types:
+            return link_types
+
+    return {
+        field
+        for field in LEGACY_PERSON_LINK_FIELDS
+        if str(person.get(field) or "").strip()
+    }
+
+
+def build_legacy_person_link_mirror_payload(
+    person: Dict[str, Any],
+    links: Optional[List[Dict[str, Any]]],
+) -> Dict[str, str]:
+    next_links = links if isinstance(links, list) else []
+    next_by_type: Dict[str, str] = {}
+
+    for link in next_links:
+        if not isinstance(link, dict):
+            continue
+        link_type = str(link.get("type") or "").strip()
+        link_url = str(link.get("url") or "").strip()
+        if link_type not in LEGACY_PERSON_LINK_FIELDS or not link_url or link_type in next_by_type:
+            continue
+        next_by_type[link_type] = normalize_legacy_person_link_value(link_type, link_url)
+
+    visible_types = get_visible_person_link_types(person)
+    mirror_payload: Dict[str, str] = {}
+    for field in LEGACY_PERSON_LINK_FIELDS:
+        if field in next_by_type:
+            mirror_payload[field] = next_by_type[field]
+        elif field in visible_types:
+            mirror_payload[field] = ""
+
+    return mirror_payload
+
+
+def is_feed_item_visible_by_date(value: Optional[str], now: Optional[datetime] = None) -> bool:
+    """Return True when the feed item date is current/past or cannot be parsed.
+
+    The activity feed is a historical surface, so future-dated items should stay hidden
+    until their month/day has actually arrived. Month-only dates are treated at month
+    precision rather than being expanded to a synthetic day.
+    """
+    if not value:
+        return True
+
+    current = now or datetime.now(timezone.utc)
+    raw = value.strip()
+
+    if re.fullmatch(r"\d{4}-\d{2}", raw):
+        try:
+            parsed = datetime.strptime(raw, "%Y-%m")
+        except ValueError:
+            return True
+        return (parsed.year, parsed.month) <= (current.year, current.month)
+
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        try:
+            parsed = datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError:
+            return True
+        return parsed.date() <= current.date()
+
+    parsed = parse_optional_datetime(raw)
+    if parsed is None:
+        return True
+    return parsed.date() <= current.date()
+
+
+def parse_event_day(value: Optional[str]):
+    if not value:
+        return None
+    raw = value.strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+        return None
+    try:
+        return datetime.strptime(raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def is_event_upcoming(event: Dict[str, Any], today=None) -> bool:
+    event_day = parse_event_day(event.get("date"))
+    if event_day is None:
+        return False
+    comparison_day = today or datetime.now(timezone.utc).date()
+    return event_day >= comparison_day
 
 
 def get_user_token_version(user: Dict[str, Any]) -> int:
@@ -1035,6 +1145,14 @@ VALID_FEEDBACK_AUDIENCES = {"lead", "team", "review"}
 VALID_FEEDBACK_BASE_AUDIENCES = {"lead", "team"}
 
 
+def create_feedback_id() -> str:
+    return f"fb-{uuid4().hex}"
+
+
+def create_challenge_id() -> str:
+    return f"ch{uuid4().hex}"
+
+
 def normalize_feedback_base_audience(value: Optional[str]) -> str:
     if value == "lead":
         return "lead"
@@ -1050,6 +1168,22 @@ def normalize_feedback_include_reviewers(
     return audience == "review"
 
 
+def is_feedback_author(
+    feedback_entry: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]],
+) -> bool:
+    if linked_person is None:
+        return False
+
+    linked_person_id = (linked_person.get("id") or "").strip()
+    entry_author_id = (feedback_entry.get("authorId") or "").strip()
+    if entry_author_id:
+        return bool(linked_person_id and entry_author_id == linked_person_id)
+
+    author_name = (feedback_entry.get("author") or "").strip()
+    return bool(author_name and author_name == (linked_person.get("name") or "").strip())
+
+
 def can_view_feedback_entry(
     user: Dict[str, Any],
     project: Dict[str, Any],
@@ -1061,8 +1195,7 @@ def can_view_feedback_entry(
     if linked_person is None:
         return False
 
-    author_name = (feedback_entry.get("author") or "").strip()
-    if author_name and author_name == (linked_person.get("name") or "").strip():
+    if is_feedback_author(feedback_entry, linked_person):
         return True
 
     audience = normalize_feedback_base_audience(feedback_entry.get("audience"))
@@ -1092,6 +1225,246 @@ def redact_project_feedback_for_viewer(
     return project_copy
 
 
+def clean_export_line(value: Any) -> str:
+    return re.sub(r"\s+", " ", str(value or "")).strip()
+
+
+def append_markdown_section(lines: List[str], title: str, body_lines: List[str]) -> None:
+    content = [line for line in body_lines if line is not None]
+    if not any(str(line).strip() for line in content):
+        return
+    lines.extend(["", f"## {title}", ""])
+    lines.extend(content)
+
+
+def append_markdown_entry(lines: List[str], title: str, body_lines: List[str]) -> None:
+    lines.extend(["", f"### {clean_export_line(title)}", ""])
+    lines.extend(line for line in body_lines if line is not None)
+
+
+def get_export_person_label(person_id: Optional[str], people_by_id: Dict[str, Dict[str, Any]]) -> str:
+    if not person_id:
+        return ""
+    return people_by_id.get(person_id, {}).get("name") or person_id
+
+
+def get_export_user_label(user: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> str:
+    if linked_person and linked_person.get("name"):
+        return linked_person["name"]
+    return user.get("name") or user.get("email") or user.get("id") or "Signed-in user"
+
+
+def safe_project_export_filename(project_id: str, exported_on: str) -> str:
+    safe_id = re.sub(r"[^A-Za-z0-9_-]+", "-", project_id or "project").strip("-") or "project"
+    return f"yard-project-{safe_id}-{exported_on}.md"
+
+
+def get_export_visual_filename(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    parsed = urlparse(value)
+    filename = Path(unquote(parsed.path or value)).name
+    return filename or value
+
+
+def export_url_for_markdown(request: Request, value: Optional[str]) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned:
+        return ""
+    parsed = urlparse(cleaned)
+    if parsed.scheme and parsed.netloc:
+        return cleaned
+    if cleaned.startswith("/"):
+        return f"{str(request.base_url).rstrip('/')}{cleaned}"
+    return cleaned
+
+
+def get_inline_visual_filenames(content: str) -> set[str]:
+    filenames: set[str] = set()
+    for match in re.finditer(r"!\[[^\]]*]\(([^)\s]+)(?:\s+\"[^\"]*\")?\)", content or ""):
+        filename = get_export_visual_filename(match.group(1))
+        if filename:
+            filenames.add(filename)
+    return filenames
+
+
+def markdown_image_line(url: str, label: str) -> str:
+    safe_label = clean_export_line(label).replace("[", "(").replace("]", ")") or "Visual"
+    return f"![{safe_label}]({url})"
+
+
+def feedback_export_audience_label(entry: Dict[str, Any]) -> str:
+    audience = normalize_feedback_base_audience(entry.get("audience"))
+    include_reviewers = normalize_feedback_include_reviewers(entry.get("audience"), entry.get("includeReviewers"))
+    base = "Project lead" if audience == "lead" else "Project team"
+    return f"{base} + programme support" if include_reviewers else base
+
+
+def render_supporting_visuals_for_export(
+    request: Request,
+    urls: List[str],
+    inline_filenames: Optional[set[str]] = None,
+) -> List[str]:
+    inline_filenames = inline_filenames or set()
+    rendered: List[str] = []
+    for index, url in enumerate(urls, start=1):
+        filename = get_export_visual_filename(url)
+        if filename and filename in inline_filenames:
+            continue
+        export_url = export_url_for_markdown(request, url)
+        if export_url:
+            rendered.extend([
+                markdown_image_line(export_url, f"Visual {index}"),
+                "",
+            ])
+    return rendered
+
+
+def render_project_export_markdown(
+    request: Request,
+    project: Dict[str, Any],
+    user: Dict[str, Any],
+    linked_person: Optional[Dict[str, Any]],
+    people: List[Dict[str, Any]],
+    milestones: List[Dict[str, Any]],
+    concept_notes: List[Dict[str, Any]],
+) -> str:
+    people_by_id = {person.get("id"): person for person in people if person.get("id")}
+    exported_at = utc_now()
+    export_date = exported_at.strftime("%Y-%m-%d")
+    export_timestamp = exported_at.strftime("%Y-%m-%d %H:%M UTC")
+    lead_label = get_export_person_label(get_project_lead_id(project), people_by_id)
+    contributor_labels = [
+        get_export_person_label(person_id, people_by_id)
+        for person_id in get_project_member_ids(project)
+        if person_id and person_id != get_project_lead_id(project)
+    ]
+    contributor_labels = [label for label in contributor_labels if label]
+    project_id = project.get("id") or ""
+
+    lines: List[str] = [
+        f"# {clean_export_line(project.get('title') or project_id or 'Project')}",
+        "",
+        f"_Snapshot exported on {export_timestamp}. Includes project content visible to {get_export_user_label(user, linked_person)} at export time._",
+        "",
+    ]
+
+    meta_lines = []
+    if lead_label:
+        meta_lines.append(f"- Lead: {lead_label}")
+    if contributor_labels:
+        meta_lines.append(f"- Contributors: {', '.join(contributor_labels)}")
+    append_markdown_section(lines, "Project Team", meta_lines)
+
+    abstract_text = (project.get("abstract") or project.get("description") or "").strip()
+    append_markdown_section(lines, "Abstract", [abstract_text] if abstract_text else [])
+
+    related_note_lines = []
+    for note in concept_notes:
+        if project_id and project_id in (note.get("relatedProjects") or []):
+            title = clean_export_line(note.get("title") or note.get("id"))
+            if title:
+                related_note_lines.append(f"- {title}")
+    append_markdown_section(lines, "Related Concept Notes", related_note_lines)
+
+    presentation_lines = []
+    slides_url = (project.get("slidesUrl") or "").strip()
+    if slides_url:
+        presentation_lines.append(f"- Slides: {slides_url}")
+    project_visuals = render_supporting_visuals_for_export(request, normalize_visual_list(project.get("svgUrls")) or [])
+    presentation_lines.extend(project_visuals)
+    append_markdown_section(lines, "Presentation Slides And Visuals", presentation_lines)
+
+    current_challenges = sorted(
+        project.get("currentChallenges") or [],
+        key=lambda item: item.get("lastModified") or item.get("date") or "",
+        reverse=True,
+    )
+    challenge_lines: List[str] = []
+    for challenge in current_challenges:
+        title = f"{challenge.get('lastModified') or challenge.get('date') or 'Undated'} — {normalize_challenge_severity(challenge.get('severity'))}"
+        body = []
+        if challenge.get("raisedBy"):
+            body.append(f"Raised by: {challenge.get('raisedBy')}")
+            body.append("")
+        body.append((challenge.get("description") or "").strip())
+        append_markdown_entry(challenge_lines, title, body)
+    append_markdown_section(lines, "Current Challenges", challenge_lines)
+
+    resolved_challenges = sorted(
+        project.get("resolvedChallenges") or [],
+        key=lambda item: item.get("resolvedDate") or item.get("lastModified") or item.get("date") or "",
+        reverse=True,
+    )
+    resolved_lines: List[str] = []
+    for challenge in resolved_challenges:
+        title = f"{challenge.get('resolvedDate') or challenge.get('lastModified') or challenge.get('date') or 'Undated'} — {normalize_challenge_severity(challenge.get('severity'))}"
+        body = []
+        if challenge.get("resolvedBy"):
+            body.append(f"Resolved by: {challenge.get('resolvedBy')}")
+            body.append("")
+        body.append((challenge.get("description") or "").strip())
+        if challenge.get("resolutionNote"):
+            body.extend(["", f"Resolution: {challenge.get('resolutionNote')}"])
+        append_markdown_entry(resolved_lines, title, body)
+    append_markdown_section(lines, "Resolved Challenges", resolved_lines)
+
+    project_milestones = sorted(
+        [
+            milestone for milestone in milestones
+            if (milestone.get("project") or milestone.get("projectId")) == project_id
+        ],
+        key=lambda item: item.get("dueDate") or "",
+    )
+    milestone_lines: List[str] = []
+    for milestone in project_milestones:
+        due_date = milestone.get("dueDate") or "No due date"
+        status = compute_milestone_status(milestone)
+        body = [f"- Due: {due_date}", f"- Status: {status}"]
+        if milestone.get("completedDate"):
+            body.append(f"- Completed: {milestone.get('completedDate')}")
+        append_markdown_entry(milestone_lines, milestone.get("title") or "Milestone", body)
+    append_markdown_section(lines, "Milestones", milestone_lines)
+
+    progress_entries = [
+        {**entry, "entryType": "updates"} for entry in (project.get("updates") or [])
+    ] + [
+        {**entry, "entryType": "feedback"} for entry in (project.get("feedback") or [])
+    ]
+    progress_entries = sorted(
+        progress_entries,
+        key=lambda item: item.get("lastModified") or item.get("date") or "",
+        reverse=True,
+    )
+    progress_lines: List[str] = []
+    for entry in progress_entries:
+        date_label = entry.get("lastModified") or entry.get("date") or "Undated"
+        title = entry.get("title") or ("Feedback" if entry.get("entryType") == "feedback" else "Update")
+        body = []
+        author = entry.get("author")
+        if author:
+            body.append(f"Author: {author}")
+        if entry.get("entryType") == "feedback":
+            body.append(f"Audience: {feedback_export_audience_label(entry)}")
+        if body:
+            body.append("")
+        body.append((entry.get("content") or "").strip())
+        if entry.get("entryType") == "updates":
+            if entry.get("slidesUrl"):
+                body.extend(["", f"Slides: {entry.get('slidesUrl')}"])
+            visuals = render_supporting_visuals_for_export(
+                request,
+                normalize_visual_list(entry.get("svgUrls")) or [],
+                get_inline_visual_filenames(entry.get("content") or ""),
+            )
+            if visuals:
+                body.extend(["", "Supporting visuals:", "", *visuals])
+        append_markdown_entry(progress_lines, f"{date_label} — {title}", body)
+    append_markdown_section(lines, "Progress", progress_lines)
+
+    return "\n".join(lines).strip() + "\n"
+
+
 def can_add_project_feedback(
     user: Dict[str, Any],
     project: Dict[str, Any],
@@ -1115,9 +1488,206 @@ def can_edit_feedback_entry(
         return True
     if linked_person is None:
         return False
-    if feedback_entry.get("author") != linked_person.get("name"):
+    if not is_feedback_author(feedback_entry, linked_person):
         return False
     return can_add_project_feedback(user, project, linked_person)
+
+
+def build_unique_person_id_by_name(people: List[Dict[str, Any]]) -> Dict[str, str]:
+    ids_by_name: Dict[str, set[str]] = {}
+    for person in people:
+        name = (person.get("name") or "").strip()
+        person_id = (person.get("id") or "").strip()
+        if not name or not person_id:
+            continue
+        ids_by_name.setdefault(name, set()).add(person_id)
+    return {name: next(iter(person_ids)) for name, person_ids in ids_by_name.items() if len(person_ids) == 1}
+
+
+def resolve_person_reference(
+    value: str,
+    people_by_id: Dict[str, Dict[str, Any]],
+    unique_person_id_by_name: Dict[str, str],
+) -> tuple[Optional[str], Optional[str]]:
+    reference = (value or "").strip()
+    if not reference:
+        return None, None
+
+    person = people_by_id.get(reference)
+    if person:
+        return (person.get("name") or "").strip() or reference, reference
+
+    person_id = unique_person_id_by_name.get(reference)
+    if person_id:
+        return reference, person_id
+
+    return reference, None
+
+
+def normalize_feedback_identity_fields(
+    feedback_entries: List[Dict[str, Any]],
+    unique_person_id_by_name: Dict[str, str],
+) -> tuple[List[Dict[str, Any]], bool]:
+    changed = False
+    seen_ids: set[str] = set()
+    normalized_entries: List[Dict[str, Any]] = []
+
+    for entry in feedback_entries:
+        if not isinstance(entry, dict):
+            normalized_entries.append(entry)
+            continue
+
+        normalized_entry = dict(entry)
+        feedback_id = (normalized_entry.get("id") or "").strip()
+        if not feedback_id or feedback_id in seen_ids:
+            feedback_id = create_feedback_id()
+            normalized_entry["id"] = feedback_id
+            changed = True
+        elif normalized_entry.get("id") != feedback_id:
+            normalized_entry["id"] = feedback_id
+            changed = True
+        seen_ids.add(feedback_id)
+
+        author_id = (normalized_entry.get("authorId") or "").strip()
+        if author_id:
+            if normalized_entry.get("authorId") != author_id:
+                normalized_entry["authorId"] = author_id
+                changed = True
+        else:
+            inferred_author_id = unique_person_id_by_name.get((normalized_entry.get("author") or "").strip())
+            if inferred_author_id:
+                normalized_entry["authorId"] = inferred_author_id
+                changed = True
+
+        normalized_entries.append(normalized_entry)
+
+    return normalized_entries, changed
+
+
+async def backfill_project_feedback_identity_fields() -> None:
+    people = await list_collection("people", limit=1000)
+    unique_person_id_by_name = build_unique_person_id_by_name(people)
+
+    for project in await list_collection("projects", limit=1000):
+        feedback_entries = project.get("feedback") or []
+        if not isinstance(feedback_entries, list):
+            continue
+
+        normalized_feedback, changed = normalize_feedback_identity_fields(feedback_entries, unique_person_id_by_name)
+        if changed:
+            await update_fields("projects", "id", project["id"], {"feedback": normalized_feedback})
+            logger.info("Migration: normalized feedback identities for project %s", project["id"])
+
+
+def normalize_challenge_identity_fields(
+    challenge_entries: List[Dict[str, Any]],
+    people_by_id: Dict[str, Dict[str, Any]],
+    unique_person_id_by_name: Dict[str, str],
+    seen_ids: Optional[set[str]] = None,
+) -> tuple[List[Dict[str, Any]], bool]:
+    changed = False
+    seen_ids = seen_ids if seen_ids is not None else set()
+    normalized_entries: List[Dict[str, Any]] = []
+
+    for entry in challenge_entries:
+        if not isinstance(entry, dict):
+            normalized_entries.append(entry)
+            continue
+
+        normalized_entry = dict(entry)
+        challenge_id = (normalized_entry.get("id") or "").strip()
+        if not challenge_id or challenge_id in seen_ids:
+            challenge_id = create_challenge_id()
+            normalized_entry["id"] = challenge_id
+            changed = True
+        elif normalized_entry.get("id") != challenge_id:
+            normalized_entry["id"] = challenge_id
+            changed = True
+        seen_ids.add(challenge_id)
+
+        raised_by = (normalized_entry.get("raisedBy") or "").strip()
+        raised_by_id = (normalized_entry.get("raisedById") or "").strip()
+        if raised_by_id:
+            if normalized_entry.get("raisedById") != raised_by_id:
+                normalized_entry["raisedById"] = raised_by_id
+                changed = True
+        else:
+            display_name, inferred_id = resolve_person_reference(
+                raised_by,
+                people_by_id,
+                unique_person_id_by_name,
+            )
+            if inferred_id:
+                normalized_entry["raisedById"] = inferred_id
+                changed = True
+            if display_name and display_name != raised_by:
+                normalized_entry["raisedBy"] = display_name
+                changed = True
+
+        resolved_by = (normalized_entry.get("resolvedBy") or "").strip()
+        resolved_by_id = (normalized_entry.get("resolvedById") or "").strip()
+        if resolved_by_id:
+            if normalized_entry.get("resolvedById") != resolved_by_id:
+                normalized_entry["resolvedById"] = resolved_by_id
+                changed = True
+        else:
+            display_name, inferred_id = resolve_person_reference(
+                resolved_by,
+                people_by_id,
+                unique_person_id_by_name,
+            )
+            if inferred_id:
+                normalized_entry["resolvedById"] = inferred_id
+                changed = True
+            if display_name and display_name != resolved_by:
+                normalized_entry["resolvedBy"] = display_name
+                changed = True
+
+        normalized_entries.append(normalized_entry)
+
+    return normalized_entries, changed
+
+
+async def backfill_project_challenge_identity_fields() -> None:
+    people = await list_collection("people", limit=1000)
+    people_by_id = {
+        (person.get("id") or "").strip(): person
+        for person in people
+        if (person.get("id") or "").strip()
+    }
+    unique_person_id_by_name = build_unique_person_id_by_name(people)
+
+    for project in await list_collection("projects", limit=1000):
+        current_challenges = project.get("currentChallenges") or []
+        resolved_challenges = project.get("resolvedChallenges") or []
+        if not isinstance(current_challenges, list) or not isinstance(resolved_challenges, list):
+            continue
+
+        seen_ids: set[str] = set()
+        normalized_current, current_changed = normalize_challenge_identity_fields(
+            current_challenges,
+            people_by_id,
+            unique_person_id_by_name,
+            seen_ids,
+        )
+        normalized_resolved, resolved_changed = normalize_challenge_identity_fields(
+            resolved_challenges,
+            people_by_id,
+            unique_person_id_by_name,
+            seen_ids,
+        )
+
+        if current_changed or resolved_changed:
+            await update_fields(
+                "projects",
+                "id",
+                project["id"],
+                {
+                    "currentChallenges": normalized_current,
+                    "resolvedChallenges": normalized_resolved,
+                },
+            )
+            logger.info("Migration: normalized challenge identities for project %s", project["id"])
 
 
 def can_access_review_surface(user: Dict[str, Any], linked_person: Optional[Dict[str, Any]]) -> bool:
@@ -1164,7 +1734,6 @@ class PersonUpdate(BaseModel):
     researchDescription: Optional[str] = None
     skills: Optional[List[str]] = None
     email: Optional[str] = None
-    bio: Optional[str] = None
     links: Optional[List[Dict[str, Any]]] = None
     website: Optional[str] = None
     github: Optional[str] = None
@@ -1203,7 +1772,6 @@ class PersonUpdate(BaseModel):
             self.researchDescription is not None,
             self.skills is not None,
             self.email is not None,
-            self.bio is not None,
             self.links is not None,
             self.website is not None,
             self.github is not None,
@@ -1946,7 +2514,7 @@ class ProjectUpdateCreate(BaseModel):
 
 
 class FeedbackCreate(BaseModel):
-    title: str
+    title: Optional[str] = ""
     content: str
     author: str = ""
     date: Optional[str] = None
@@ -1959,6 +2527,18 @@ class FeedbackCreate(BaseModel):
     def check_audience(cls, v: str) -> str:
         if v not in VALID_FEEDBACK_AUDIENCES:
             raise ValueError(f"audience must be one of {VALID_FEEDBACK_AUDIENCES}, got {v}")
+        return v
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, v: Optional[str]) -> str:
+        return (v or "").strip()
+
+    @field_validator("content")
+    @classmethod
+    def check_content(cls, v: str) -> str:
+        if not (v or "").strip():
+            raise ValueError("content cannot be empty")
         return v
 
     @field_validator("includeReviewers")
@@ -1985,6 +2565,14 @@ class ChallengeCreate(BaseModel):
     date: Optional[str] = None
     publish: Optional[bool] = None
 
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, v: str) -> str:
+        value = (v or "").strip()
+        if not value:
+            raise ValueError("description cannot be empty")
+        return value
+
     @field_validator("severity")
     @classmethod
     def check_severity(cls, v: str) -> str:
@@ -1998,6 +2586,16 @@ class ChallengeEdit(BaseModel):
     description: Optional[str] = None
     severity: Optional[str] = None
     publish: Optional[bool] = None
+
+    @field_validator("description")
+    @classmethod
+    def check_description(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        value = v.strip()
+        if not value:
+            raise ValueError("description cannot be empty")
+        return value
 
     @model_validator(mode="after")
     def check_at_least_one_field(self) -> "ChallengeEdit":
@@ -2462,7 +3060,6 @@ async def admin_onboard_member(
             "email": normalized_email,
             "researchDescription": (data.researchDescription or "").strip(),
             "skills": data.skills or [],
-            "bio": "",
             "links": data.links or [],
             "website": (data.website or "").strip(),
             "github": (data.github or "").strip(),
@@ -2605,7 +3202,6 @@ async def create_person(
         "email": normalized_email,
         "researchDescription": data.researchDescription or "",
         "skills": data.skills or [],
-        "bio": "",
         "links": data.links or [],
         "website": data.website or "",
         "github": data.github or "",
@@ -2643,6 +3239,8 @@ async def update_person(
             if existing_person:
                 raise HTTPException(status_code=400, detail="Email is already used by another profile")
         update_payload["email"] = normalized_email
+    if "links" in update_payload:
+        update_payload.update(build_legacy_person_link_mirror_payload(person, update_payload.get("links")))
     update_payload.pop("publish", None)
     if not update_payload:
         return person
@@ -2670,6 +3268,40 @@ async def get_project(
         raise HTTPException(status_code=404, detail="Project not found")
     linked_person = await get_linked_person(user)
     return redact_project_feedback_for_viewer(item, user, linked_person)
+
+
+@api_router.get("/projects/{project_id}/export.md")
+async def export_project_markdown(
+    project_id: str,
+    request: Request,
+    user: Dict[str, Any] = Depends(get_current_user),
+) -> Response:
+    item = await get_by_field("projects", "id", project_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    linked_person = await get_linked_person(user)
+    redacted_project = redact_project_feedback_for_viewer(item, user, linked_person)
+    people = await list_collection("people", limit=400)
+    milestones = await list_collection("milestones", limit=500)
+    concept_notes = await list_collection("conceptnotes", limit=200)
+    markdown = render_project_export_markdown(
+        request,
+        redacted_project,
+        user,
+        linked_person,
+        people,
+        milestones,
+        concept_notes,
+    )
+    exported_on = utc_now().strftime("%Y-%m-%d")
+    filename = safe_project_export_filename(project_id, exported_on)
+    logger.info("Project export requested user=%s project=%s", user.get("email") or user.get("id"), project_id)
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @api_router.post("/projects")
@@ -2955,7 +3587,8 @@ async def add_project_feedback(
         raise HTTPException(status_code=403, detail="Only users with review access who are not the project lead can add feedback")
     entry_date = data.date or utc_now().strftime("%Y-%m-%d")
     feedback_doc = {
-        "title": data.title,
+        "id": create_feedback_id(),
+        "title": (data.title or "").strip(),
         "content": data.content,
         "author": linked.get("name") if linked else (user.get("name") or user.get("email")),
         "date": entry_date,
@@ -2964,6 +3597,8 @@ async def add_project_feedback(
         "published": False,
         "lastModified": entry_date,
     }
+    if linked and linked.get("id"):
+        feedback_doc["authorId"] = linked["id"]
     updated_project = await append_to_list_field("projects", "id", project_id, "feedback", feedback_doc, prepend=True)
     return feedback_doc
 
@@ -2982,13 +3617,15 @@ async def add_project_challenge(
         raise HTTPException(status_code=403, detail="Only the project lead or admin can add challenges")
     publish_now = bool(data.publish)
     challenge_doc = {
-        "id": f"ch{uuid4().hex}",
+        "id": create_challenge_id(),
         "description": data.description,
         "severity": data.severity,
         "raisedBy": linked.get("name") if linked else (user.get("name") or user.get("id")),
         "date": data.date or utc_now().strftime("%Y-%m-%d"),
         "published": publish_now,
     }
+    if linked and linked.get("id"):
+        challenge_doc["raisedById"] = linked["id"]
     if publish_now:
         challenge_doc["lastModified"] = challenge_doc["date"]
     updated_project = await append_to_list_field("projects", "id", project_id, "currentChallenges", challenge_doc)
@@ -3073,10 +3710,10 @@ async def edit_project_update(
     return updated
 
 
-@api_router.put("/projects/{project_id}/feedback/{entry_index}")
+@api_router.put("/projects/{project_id}/feedback/{feedback_id}")
 async def edit_project_feedback(
     project_id: str,
-    entry_index: int,
+    feedback_id: str,
     data: EntryEdit,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
@@ -3084,13 +3721,25 @@ async def edit_project_feedback(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     linked = await get_linked_person(user)
+    feedback_id = (feedback_id or "").strip()
     feedback = project.get("feedback") or []
-    if entry_index < 0 or entry_index >= len(feedback):
+    entry_index = next(
+        (
+            index
+            for index, entry in enumerate(feedback)
+            if isinstance(entry, dict) and (entry.get("id") or "").strip() == feedback_id
+        ),
+        -1,
+    )
+    if entry_index < 0:
         raise HTTPException(status_code=404, detail="Feedback entry not found")
     if not can_edit_feedback_entry(user, project, linked, feedback[entry_index]):
         raise HTTPException(status_code=403, detail="Only the feedback author or an admin can edit")
+    next_content = data.content if data.content is not None else feedback[entry_index].get("content", "")
+    if not (next_content or "").strip():
+        raise HTTPException(status_code=422, detail="Feedback content cannot be empty")
     if data.title is not None:
-        feedback[entry_index]["title"] = data.title
+        feedback[entry_index]["title"] = data.title.strip()
     if data.content is not None:
         feedback[entry_index]["content"] = data.content
     if data.audience is not None:
@@ -3103,13 +3752,15 @@ async def edit_project_feedback(
     feedback[entry_index]["published"] = False
     feedback[entry_index]["lastModified"] = utc_now().strftime("%Y-%m-%d")
     updated = await update_fields("projects", "id", project_id, {"feedback": feedback})
-    return updated
+    if not updated:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return redact_project_feedback_for_viewer(updated, user, linked)
 
 
-@api_router.put("/projects/{project_id}/challenges/{entry_index}")
+@api_router.put("/projects/{project_id}/challenges/{challenge_id}")
 async def edit_project_challenge(
     project_id: str,
-    entry_index: int,
+    challenge_id: str,
     data: ChallengeEdit,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
@@ -3120,8 +3771,17 @@ async def edit_project_challenge(
     if not can_edit_project(user, project, linked):
         raise HTTPException(status_code=403, detail="Only a project lead or admin can edit")
 
+    challenge_id = (challenge_id or "").strip()
     challenges = project.get("currentChallenges") or []
-    if entry_index < 0 or entry_index >= len(challenges):
+    entry_index = next(
+        (
+            index
+            for index, entry in enumerate(challenges)
+            if isinstance(entry, dict) and (entry.get("id") or "").strip() == challenge_id
+        ),
+        -1,
+    )
+    if entry_index < 0:
         raise HTTPException(status_code=404, detail="Challenge not found")
 
     if data.description is not None:
@@ -3136,10 +3796,10 @@ async def edit_project_challenge(
     return updated
 
 
-@api_router.post("/projects/{project_id}/challenges/{entry_index}/resolve")
+@api_router.post("/projects/{project_id}/challenges/{challenge_id}/resolve")
 async def resolve_project_challenge(
     project_id: str,
-    entry_index: int,
+    challenge_id: str,
     data: ChallengeResolve,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
@@ -3150,28 +3810,41 @@ async def resolve_project_challenge(
     if not can_edit_project(user, project, linked):
         raise HTTPException(status_code=403, detail="Only a project lead or admin can edit")
 
+    challenge_id = (challenge_id or "").strip()
     challenges = list(project.get("currentChallenges") or [])
-    if entry_index < 0 or entry_index >= len(challenges):
+    entry_index = next(
+        (
+            index
+            for index, entry in enumerate(challenges)
+            if isinstance(entry, dict) and (entry.get("id") or "").strip() == challenge_id
+        ),
+        -1,
+    )
+    if entry_index < 0:
         raise HTTPException(status_code=404, detail="Challenge not found")
 
     resolved_entry = {**challenges.pop(entry_index)}
     resolved_entry["resolvedDate"] = data.resolvedDate or utc_now().strftime("%Y-%m-%d")
     resolved_entry["resolvedBy"] = linked.get("name") if linked else (user.get("name") or user.get("email"))
+    if linked and linked.get("id"):
+        resolved_entry["resolvedById"] = linked["id"]
     resolved_entry["published"] = resolved_entry.get("published", True)
     if data.resolutionNote:
         resolved_entry["resolutionNote"] = data.resolutionNote
     resolved_entry["lastModified"] = resolved_entry["resolvedDate"]
 
     resolved_challenges = [resolved_entry, *(project.get("resolvedChallenges") or [])]
+    update_payload = {
+        "currentChallenges": challenges,
+        "resolvedChallenges": resolved_challenges,
+    }
+    if is_entry_surfaced(resolved_entry):
+        update_payload["lastModified"] = resolved_entry["resolvedDate"]
     updated = await update_fields(
         "projects",
         "id",
         project_id,
-        {
-            "currentChallenges": challenges,
-            "resolvedChallenges": resolved_challenges,
-            "lastModified": resolved_entry["resolvedDate"],
-        },
+        update_payload,
     )
     return updated
 
@@ -3519,7 +4192,7 @@ async def get_dashboard_stats(
     projects_count = await count_collection("projects")
     publications_count = await count_collection("publications")
     events = await list_collection("events", limit=100)
-    upcoming_events = sum(1 for event in events if event.get("status") == "upcoming")
+    upcoming_events = sum(1 for event in events if is_event_upcoming(event))
     milestones = await list_collection("milestones", limit=500)
     projects = await list_collection("projects", limit=200)
     challenges = []
@@ -3550,70 +4223,127 @@ async def get_dashboard_stats(
 async def get_dashboard_activity(
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> List[Dict[str, Any]]:
-    """Return the full activity feed — updates, challenges, and concept note
-    creation events — sorted newest-first. No cap: the frontend handles
-    pagination / scroll."""
+    """Return the full activity feed — updates, challenges, completed milestones,
+    publications, events, and concept note creation events — sorted newest-first.
+    No cap: the frontend handles pagination / scroll."""
     del user
     projects = await list_collection("projects", limit=200)
     concept_notes = await list_collection("conceptnotes", limit=200)
+    milestones = await list_collection("milestones", limit=500)
+    publications = await list_collection("publications", limit=200)
+    events = await list_collection("events", limit=100)
     people = await list_collection("people", limit=400)
     people_by_id = {person["id"]: person.get("name", person["id"]) for person in people}
+    projects_by_id = {project["id"]: project for project in projects}
     activities: List[Dict[str, Any]] = []
+    current_time = datetime.now(timezone.utc)
 
     for project in projects:
         for update in project.get("updates") or []:
             if not is_entry_surfaced(update):
                 continue
-            activities.append(
-                {
-                    "type": "update",
-                    "project": project["title"],
-                    "projectId": project["id"],
-                    "title": update.get("title", ""),
-                    "date": update.get("lastModified") or update.get("date", ""),
-                    "author": update.get("author", ""),
-                }
-            )
+            item = {
+                "type": "update",
+                "project": project["title"],
+                "context": project["title"],
+                "projectId": project["id"],
+                "title": update.get("title", ""),
+                "date": update.get("lastModified") or update.get("date", ""),
+                "author": update.get("author", ""),
+            }
+            if is_feed_item_visible_by_date(item["date"], current_time):
+                activities.append(item)
         for challenge in project.get("currentChallenges") or []:
             if not is_entry_surfaced(challenge):
                 continue
-            activities.append(
-                {
-                    "type": "challenge",
-                    "project": project["title"],
-                    "projectId": project["id"],
-                    "title": challenge.get("description", "")[:90],
-                    "date": challenge.get("lastModified") or challenge.get("date", ""),
-                    "author": challenge.get("raisedBy", ""),
-                    "severity": challenge.get("severity", ""),
-                }
-            )
+            item = {
+                "type": "challenge",
+                "project": project["title"],
+                "context": project["title"],
+                "projectId": project["id"],
+                "title": challenge.get("description", "")[:90],
+                "date": challenge.get("lastModified") or challenge.get("date", ""),
+                "author": challenge.get("raisedBy", ""),
+                "severity": challenge.get("severity", ""),
+            }
+            if is_feed_item_visible_by_date(item["date"], current_time):
+                activities.append(item)
         for challenge in project.get("resolvedChallenges") or []:
             if not is_entry_surfaced(challenge):
                 continue
-            activities.append(
-                {
-                    "type": "challenge-resolved",
-                    "project": project["title"],
-                    "projectId": project["id"],
-                    "title": challenge.get("description", "")[:90],
-                    "date": challenge.get("resolvedDate") or challenge.get("lastModified") or challenge.get("date", ""),
-                    "author": challenge.get("resolvedBy", ""),
-                    "severity": challenge.get("severity", ""),
-                }
-            )
+            item = {
+                "type": "challenge-resolved",
+                "project": project["title"],
+                "context": project["title"],
+                "projectId": project["id"],
+                "title": challenge.get("description", "")[:90],
+                "date": challenge.get("resolvedDate") or challenge.get("lastModified") or challenge.get("date", ""),
+                "author": challenge.get("resolvedBy", ""),
+                "severity": challenge.get("severity", ""),
+            }
+            if is_feed_item_visible_by_date(item["date"], current_time):
+                activities.append(item)
+
+    for milestone in milestones:
+        if compute_milestone_status(milestone) != "completed":
+            continue
+        project_id = milestone.get("project") or milestone.get("projectId") or ""
+        project = projects_by_id.get(project_id)
+        item = {
+            "type": "milestone",
+            "project": project.get("title", "") if project else "",
+            "context": project.get("title", "") if project else "",
+            "projectId": project_id,
+            "title": milestone.get("title", ""),
+            "date": milestone.get("completedDate") or milestone.get("dueDate", ""),
+            "author": "",
+        }
+        if is_feed_item_visible_by_date(item["date"], current_time):
+            activities.append(item)
+
+    for publication in publications:
+        project_ids = publication.get("projectIds") or ([publication.get("projectId")] if publication.get("projectId") else [])
+        primary_project_id = next((project_id for project_id in project_ids if project_id), "")
+        primary_project = projects_by_id.get(primary_project_id)
+        item = {
+            "type": "publication",
+            "project": primary_project.get("title", "") if primary_project else "",
+            "context": publication.get("venue", ""),
+            "projectId": primary_project_id,
+            "title": publication.get("title", ""),
+            "date": publication.get("date", ""),
+            "author": publication.get("authors", ""),
+        }
+        if is_feed_item_visible_by_date(item["date"], current_time):
+            activities.append(item)
+
+    for event in events:
+        item = {
+            "type": "event",
+            "project": "",
+            "context": event.get("location", ""),
+            "projectId": "",
+            "eventId": event.get("id", ""),
+            "title": event.get("name", ""),
+            "date": event.get("date", ""),
+            "author": "",
+        }
+        if is_feed_item_visible_by_date(item["date"], current_time):
+            activities.append(item)
 
     for note in concept_notes:
-        activities.append(
-            {
-                "type": "concept-note",
-                "project": "",
-                "projectId": "",
-                "title": note.get("title", ""),
-                "date": note.get("createdAt", ""),
-                "author": build_concept_note_activity_author(note, people_by_id),
-            }
-        )
+        item = {
+            "type": "concept-note",
+            "project": "",
+            "context": "",
+            "projectId": "",
+            "noteId": note.get("id", ""),
+            "title": note.get("title", ""),
+            "date": note.get("createdAt", ""),
+            "author": build_concept_note_activity_author(note, people_by_id),
+        }
+        if is_feed_item_visible_by_date(item["date"], current_time):
+            activities.append(item)
 
     activities.sort(key=lambda item: item.get("date", ""), reverse=True)
     return activities
@@ -3658,11 +4388,15 @@ async def seed_database() -> None:
     if seed_file is None:
         logger.info("No seed file configured; skipping data seed")
         await ensure_indexes()
+        await backfill_project_feedback_identity_fields()
+        await backfill_project_challenge_identity_fields()
         return
 
     if not seed_file.exists():
         logger.warning("Configured seed file %s not found, skipping data seed", seed_file)
         await ensure_indexes()
+        await backfill_project_feedback_identity_fields()
+        await backfill_project_challenge_identity_fields()
         return
 
     with open(seed_file, "r", encoding="utf-8") as handle:
@@ -3688,6 +4422,8 @@ async def seed_database() -> None:
 
     # ── One-time migrations ──
     await run_migrations(seed)
+    await backfill_project_feedback_identity_fields()
+    await backfill_project_challenge_identity_fields()
 
 
 async def run_migrations(seed: dict) -> None:

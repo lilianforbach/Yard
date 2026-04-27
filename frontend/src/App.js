@@ -21,14 +21,18 @@ import Dashboard from './components/app/Dashboard';
 import People from './components/app/People';
 import Projects from './components/app/Projects';
 import ProjectModal from './components/app/ProjectModal';
+import ConceptNotePanel from './components/app/ConceptNotePanel';
+import EventPanel from './components/app/EventPanel';
 import ProjectFullPage from './components/app/ProjectFullPage';
+import ProjectExportPrintPage from './components/app/ProjectExportPrintPage';
 import PersonPanel from './components/app/PersonPanel';
 import Publications from './components/app/Publications';
 import Events from './components/app/Events';
 import ConceptNotes from './components/app/ConceptNotes';
 import Resources from './components/app/Resources';
 import Onboarding from './components/app/Onboarding';
-import { canAccessProjectReview } from './lib/projectReview';
+import { canAccessProjectContext } from './lib/projectReview';
+import { getProjectTeamMemberIds } from './lib/projectTeam';
 import { getLinkedPerson } from './lib/roleAccess';
 import './App.css';
 
@@ -37,7 +41,7 @@ const sectionMeta = {
     label: 'Dashboard',
     title: 'Dashboard',
     path: '/dashboard',
-    description: "See what's happening across the programme.",
+    description: "See what’s happening across the programme.",
   },
   people: {
     label: 'People',
@@ -52,10 +56,10 @@ const sectionMeta = {
     description: 'Browse active projects, teams, and shared research records across the programme.',
   },
   review: {
-    label: 'Review',
-    title: 'Review',
+    label: 'Project Context',
+    title: 'Project Context',
     path: '/review',
-    description: 'See where projects may need attention, support, or follow-up.',
+    description: 'See recent project movement, milestones, and visible coordination signals.',
   },
   conceptnotes: {
     label: 'Concept Notes',
@@ -106,7 +110,7 @@ function ProjectFullPageRoute({ onBack, onPersonClick }) {
 
 function AppShell() {
   const { user, permissions } = useAuth();
-  const { error, fetchAll, refreshing, getPerson } = useData();
+  const { error, fetchAll, refreshing, getPerson, projects } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -139,10 +143,14 @@ function AppShell() {
     () => getLinkedPerson(permissions, getPerson),
     [getPerson, permissions]
   );
-  const reviewAccess = useMemo(
-    () => canAccessProjectReview(permissions, linkedPerson),
-    [linkedPerson, permissions]
+  const projectContextAccess = useMemo(
+    () => canAccessProjectContext(permissions),
+    [permissions]
   );
+  const myProjects = useMemo(() => {
+    if (!linkedPerson?.id) return [];
+    return projects.filter((project) => getProjectTeamMemberIds(project).includes(linkedPerson.id));
+  }, [linkedPerson?.id, projects]);
   const activeSection = useMemo(() => getSectionFromPath(location.pathname), [location.pathname]);
   const isProjectDetailRoute = location.pathname.startsWith('/projects/');
   const personPanelId = searchParams.get('person');
@@ -153,8 +161,17 @@ function AppShell() {
   const projectWorkspaceMode = !isMobile && activeSection === 'projects' && Boolean(projectModalId) && !isProjectDetailRoute;
   const conceptWorkspaceMode = !isMobile && activeSection === 'conceptnotes' && Boolean(notePanelId);
   const eventWorkspaceMode = !isMobile && activeSection === 'events' && Boolean(eventPanelId);
+  const globalConceptPanelOpen = Boolean(notePanelId) && activeSection !== 'conceptnotes';
+  const globalEventPanelOpen = Boolean(eventPanelId) && activeSection !== 'events';
   const workspaceWithPanel = projectWorkspaceMode || conceptWorkspaceMode || eventWorkspaceMode;
-  const effectiveSidebarCollapsed = isMobile ? false : (sidebarCollapsed || projectWorkspaceMode || conceptWorkspaceMode || eventWorkspaceMode);
+  const effectiveSidebarCollapsed = isMobile ? false : (
+    sidebarCollapsed
+    || projectWorkspaceMode
+    || conceptWorkspaceMode
+    || eventWorkspaceMode
+    || globalConceptPanelOpen
+    || globalEventPanelOpen
+  );
   const pageMeta = isProjectDetailRoute
     ? {
         title: 'Project',
@@ -192,10 +209,45 @@ function AppShell() {
   };
 
   const handleProjectClick = (projectId) => {
+    if (!isMobile) {
+      setSidebarCollapsed(true);
+    }
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('person');
+    nextParams.delete('note');
+    nextParams.delete('event');
     nextParams.set('project', projectId);
     setSearchParams(nextParams, { replace: true });
+  };
+
+  const handleConceptNoteClick = (noteId) => {
+    if (!isMobile) {
+      setSidebarCollapsed(true);
+    }
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('person');
+    nextParams.delete('project');
+    nextParams.delete('event');
+    nextParams.set('note', noteId);
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  const handleEventClick = (eventId) => {
+    if (!isMobile) {
+      setSidebarCollapsed(true);
+    }
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('person');
+    nextParams.delete('project');
+    nextParams.delete('note');
+    nextParams.set('event', eventId);
+    setSearchParams(nextParams, { replace: true });
+  };
+
+  const handleWorkspacePanelOpen = () => {
+    if (!isMobile) {
+      setSidebarCollapsed(true);
+    }
   };
 
   const handleViewFullProject = (projectId) => {
@@ -218,8 +270,25 @@ function AppShell() {
     updateSearchParam('project', null);
   };
 
+  const handleCloseConceptNotePanel = () => {
+    updateSearchParam('note', null);
+  };
+
+  const handleCloseEventPanel = () => {
+    updateSearchParam('event', null);
+  };
+
   const handleClosePersonPanel = () => {
     updateSearchParam('person', null);
+  };
+
+  const handleOpenMyProfile = () => {
+    if (!linkedPerson?.id) return;
+    handlePersonClick(linkedPerson.id);
+  };
+
+  const handleOpenMyProjects = () => {
+    handleNavigate('projects', { view: 'mine' });
   };
 
   return (
@@ -235,11 +304,15 @@ function AppShell() {
       <Sidebar
         activeSection={activeSection}
         onNavigate={handleNavigate}
-        showReview={reviewAccess}
+        showReview={projectContextAccess}
         collapsed={effectiveSidebarCollapsed}
         mobile={isMobile}
         mobileOpen={mobileNavOpen}
         userEmail={user?.email || ''}
+        linkedPerson={linkedPerson}
+        myProjectsCount={myProjects.length}
+        onOpenMyProfile={handleOpenMyProfile}
+        onOpenMyProjects={handleOpenMyProjects}
         onToggle={() => {
           if (isMobile) {
             setMobileNavOpen(false);
@@ -284,6 +357,8 @@ function AppShell() {
                   <Dashboard
                     onNavigate={handleNavigate}
                     onProjectClick={handleProjectClick}
+                    onNoteClick={handleConceptNoteClick}
+                    onEventClick={handleEventClick}
                     onPersonClick={handlePersonClick}
                   />
                 }
@@ -295,6 +370,8 @@ function AppShell() {
                   <Projects
                     mode="catalogue"
                     onProjectClick={handleProjectClick}
+                    onNoteClick={handleConceptNoteClick}
+                    onEventClick={handleEventClick}
                     onPersonClick={handlePersonClick}
                     onNavigate={handleNavigate}
                     panelOpen={!isMobile && Boolean(projectModalId)}
@@ -307,14 +384,14 @@ function AppShell() {
               />
               <Route
                 path="/review"
-                element={reviewAccess
-                  ? <Projects mode="review-only" onProjectClick={handleProjectClick} onPersonClick={handlePersonClick} onNavigate={handleNavigate} />
+                element={projectContextAccess
+                  ? <Projects mode="review-only" onProjectClick={handleProjectClick} onNoteClick={handleConceptNoteClick} onEventClick={handleEventClick} onPersonClick={handlePersonClick} onNavigate={handleNavigate} />
                   : <Navigate to="/projects" replace />}
               />
               <Route path="/publications" element={<Publications />} />
-              <Route path="/events" element={<Events />} />
-              <Route path="/milestones" element={<Navigate to={reviewAccess ? '/review' : '/projects'} replace />} />
-              <Route path="/concept-notes" element={<ConceptNotes />} />
+              <Route path="/events" element={<Events onPanelOpen={handleWorkspacePanelOpen} />} />
+              <Route path="/milestones" element={<Navigate to={projectContextAccess ? '/review' : '/projects'} replace />} />
+              <Route path="/concept-notes" element={<ConceptNotes onPanelOpen={handleWorkspacePanelOpen} />} />
               <Route path="/resources" element={<Resources />} />
               <Route path="/rri" element={<Navigate to="/resources" replace />} />
               <Route path="/onboarding" element={<Onboarding />} />
@@ -341,6 +418,21 @@ function AppShell() {
           onProjectClick={handleViewFullProject}
         />
       )}
+
+      {globalConceptPanelOpen && (
+        <ConceptNotePanel
+          noteId={notePanelId}
+          onClose={handleCloseConceptNotePanel}
+          onNoteClick={handleConceptNoteClick}
+        />
+      )}
+
+      {globalEventPanelOpen && (
+        <EventPanel
+          eventId={eventPanelId}
+          onClose={handleCloseEventPanel}
+        />
+      )}
     </div>
   );
 }
@@ -364,9 +456,17 @@ function MainApp() {
   }
 
   return (
-    <DataProvider>
-      <AppShell />
-    </DataProvider>
+    <Routes>
+      <Route path="/projects/:projectId/export/print" element={<ProjectExportPrintPage />} />
+      <Route
+        path="/*"
+        element={(
+          <DataProvider>
+            <AppShell />
+          </DataProvider>
+        )}
+      />
+    </Routes>
   );
 }
 

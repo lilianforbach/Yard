@@ -1,9 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
 import api from '../../api';
-import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ExternalLink, Plus, Trash2, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Download, ExternalLink, Plus, Trash2, X } from 'lucide-react';
 import { formatDate, getRoleLabel } from '../../lib/constants';
 import { buildProjectTeamPayload, getProjectContributorIds, getProjectLeadId } from '../../lib/projectTeam';
 import {
@@ -79,16 +79,25 @@ function getUploadedVisualReference(rawValue) {
   return null;
 }
 
-const MAX_VISUALS = 5;
+function getFeedbackDisplayTitle(entry) {
+  const title = (entry?.title || '').trim();
+  if (title) return title;
+  const excerpt = (entry?.content || '').replace(/\s+/g, ' ').trim();
+  if (!excerpt) return 'Feedback';
+  return excerpt.length > 88 ? `${excerpt.slice(0, 85).trim()}...` : excerpt;
+}
+
+const MAX_VISUALS = 8;
 const MAX_VISUAL_UPLOAD_BYTES = 5 * 1024 * 1024;
 const VISUAL_UPLOAD_ACCEPT = '.svg,.png,.jpg,.jpeg,image/svg+xml,image/png,image/jpeg';
+const INLINE_IMAGE_SIZE_OPTIONS = [
+  { value: 'small', label: 'Small' },
+  { value: 'medium', label: 'Medium' },
+  { value: 'large', label: 'Large' },
+];
 const CHALLENGE_SEVERITY_OPTIONS = [
   { value: 'slowing', label: 'Slowing' },
   { value: 'blocking', label: 'Blocking' },
-];
-const FEEDBACK_BASE_AUDIENCE_OPTIONS = [
-  { value: 'lead', label: 'Lead only' },
-  { value: 'team', label: 'Project team' },
 ];
 const CHALLENGE_DESCRIPTION_PLACEHOLDER = [
   '• Challenges can bring useful feedback, contact, or support from across the programme.',
@@ -106,7 +115,7 @@ function createEmptyProgressForm(author = '') {
     title: '',
     content: '',
     author,
-    feedbackBaseAudience: 'team',
+    feedbackBaseAudience: 'lead',
     feedbackIncludeReviewers: false,
     slidesUrl: '',
     svgUrls: [],
@@ -123,7 +132,7 @@ function hasProgressDraftChanges(mode, form, initialAuthor = '') {
   if (mode === 'feedback') {
     return (
       (form.author || '').trim() !== (initialAuthor || '').trim()
-      || normalizeFeedbackBaseAudience(form.feedbackBaseAudience) !== 'team'
+      || normalizeFeedbackBaseAudience(form.feedbackBaseAudience) !== 'lead'
       || Boolean(form.feedbackIncludeReviewers)
     );
   }
@@ -142,6 +151,197 @@ function getSvgUrls(record) {
     return [record.svgUrl];
   }
   return [];
+}
+
+function normalizeInlineImageUrl(rawValue) {
+  return (rawValue || '').trim();
+}
+
+function getInlineImageUrls(content) {
+  if (!content) return new Set();
+  const urls = new Set();
+  const imagePattern = /!\[[^\]]*]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  let match = imagePattern.exec(content);
+  while (match) {
+    const normalized = normalizeInlineImageUrl(match[1]);
+    if (normalized) urls.add(normalized);
+    match = imagePattern.exec(content);
+  }
+  return urls;
+}
+
+function getUninsertedSvgUrls(record) {
+  const inlineUrls = getInlineImageUrls(record?.content || '');
+  return getSvgUrls(record).filter((url) => !inlineUrls.has(normalizeInlineImageUrl(url)));
+}
+
+function getVisualFilename(url) {
+  if (!url) return '';
+  try {
+    const parsed = new URL(url, window.location.origin);
+    const filename = decodeURIComponent(parsed.pathname.split('/').filter(Boolean).pop() || '');
+    return filename || url;
+  } catch {
+    return url.split('/').filter(Boolean).pop() || url;
+  }
+}
+
+function getProjectRecordExportFilename(projectId) {
+  return `yard-project-${projectId || 'record'}-${getTodayDateInputValue()}.md`;
+}
+
+function appendProjectRecordSection(lines, title, bodyLines) {
+  const items = (bodyLines || []).filter(Boolean);
+  if (!items.length) return;
+  lines.push('', `## ${title}`, '', ...items);
+}
+
+function appendProjectRecordVisuals(lines, urls) {
+  const visualLines = (urls || [])
+    .map((url) => (url ? `- ${url}` : ''))
+    .filter(Boolean);
+  if (!visualLines.length) return;
+  lines.push('', 'Supporting visuals:', ...visualLines);
+}
+
+function capitalizeValue(value) {
+  const cleaned = (value || '').trim();
+  return cleaned ? `${cleaned.charAt(0).toUpperCase()}${cleaned.slice(1)}` : '';
+}
+
+function buildClientProjectRecordMarkdown({
+  project,
+  getPerson,
+  milestones,
+  permissions,
+  user,
+}) {
+  if (!project) return '';
+
+  const linkedPerson = getLinkedPerson(permissions, getPerson);
+  const access = getProjectSurfaceAccess({ permissions, linkedPerson, project });
+  const lead = getPerson(getProjectLeadId(project));
+  const contributors = getProjectContributorIds(project).map((id) => getPerson(id)).filter(Boolean);
+  const exportingUser = linkedPerson?.name || user?.name || user?.email || 'you';
+  const exportedAt = new Date().toISOString().replace(/\.\d{3}Z$/, ' UTC');
+  const lines = [
+    `# ${project.title || 'Project record'}`,
+    '',
+    `_Snapshot exported on ${exportedAt}. Includes project content visible to ${exportingUser} at export time._`,
+    '',
+    '## Project Team',
+    '',
+  ];
+
+  if (lead?.name) lines.push(`- Lead: ${lead.name}`);
+  if (contributors.length) lines.push(`- Contributors: ${contributors.map((person) => person.name).join(', ')}`);
+
+  appendProjectRecordSection(lines, 'Abstract', [(project.abstract || '').trim()]);
+
+  const currentChallengeLines = (project.currentChallenges || []).map((challenge) => {
+    const details = [
+      challenge.lastModified || challenge.date ? `Date: ${formatDate(challenge.lastModified || challenge.date)}` : '',
+      challenge.severity ? `Type: ${capitalizeValue(challenge.severity)}` : '',
+    ].filter(Boolean).join(' | ');
+    return [
+      `### ${challenge.severity ? `${capitalizeValue(challenge.severity)} challenge` : 'Current challenge'}`,
+      details,
+      '',
+      (challenge.description || '').trim(),
+    ].filter(Boolean).join('\n');
+  });
+  appendProjectRecordSection(lines, 'Current Challenges', currentChallengeLines);
+
+  const resolvedChallengeLines = (project.resolvedChallenges || []).map((challenge) => {
+    const details = [
+      challenge.resolvedDate || challenge.lastModified || challenge.date ? `Resolved: ${formatDate(challenge.resolvedDate || challenge.lastModified || challenge.date)}` : '',
+      challenge.resolvedBy ? `By: ${challenge.resolvedBy}` : '',
+    ].filter(Boolean).join(' | ');
+    return [
+      `### ${challenge.severity ? `${capitalizeValue(challenge.severity)} challenge` : 'Resolved challenge'}`,
+      details,
+      '',
+      (challenge.description || '').trim(),
+      challenge.resolutionNote ? `Resolution: ${challenge.resolutionNote}` : '',
+    ].filter(Boolean).join('\n');
+  });
+  appendProjectRecordSection(lines, 'Resolved Challenges', resolvedChallengeLines);
+
+  const milestoneLines = (milestones || [])
+    .filter((milestone) => milestone.project === project.id)
+    .sort((a, b) => (a.dueDate || '').localeCompare(b.dueDate || ''))
+    .map((milestone) => {
+      const details = [
+        milestone.dueDate ? formatDate(milestone.dueDate) : '',
+        milestone.completed ? 'completed' : '',
+      ].filter(Boolean).join(' | ');
+      return `- ${milestone.title || 'Milestone'}${details ? ` (${details})` : ''}`;
+    });
+  appendProjectRecordSection(lines, 'Milestones', milestoneLines);
+
+  const visibleFeedback = (project.feedback || [])
+    .filter((entry) => access.canViewFeedbackEntry(entry))
+    .map((entry) => ({ ...entry, entryType: 'feedback' }));
+  const progressEntries = [
+    ...(project.updates || []).map((entry) => ({ ...entry, entryType: 'update' })),
+    ...visibleFeedback,
+  ].sort((a, b) => ((b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '')));
+
+  const progressLines = progressEntries.map((entry) => {
+    const date = entry.lastModified || entry.date ? formatDate(entry.lastModified || entry.date) : '';
+    const author = entry.author || entry.raisedBy || '';
+    const type = entry.entryType === 'feedback' ? 'Feedback' : 'Update';
+    const entryLines = [
+      `### ${entry.title || type}`,
+      [type, date, author].filter(Boolean).join(' | '),
+      '',
+      (entry.content || '').trim(),
+    ].filter(Boolean);
+    appendProjectRecordVisuals(entryLines, getUninsertedSvgUrls(entry));
+    return entryLines.join('\n');
+  });
+  appendProjectRecordSection(lines, 'Progress', progressLines);
+
+  const projectVisualLines = [];
+  if (project.slidesUrl) projectVisualLines.push(`- Presentation slides: ${project.slidesUrl}`);
+  getSvgUrls(project).forEach((url) => projectVisualLines.push(`- ${url}`));
+  appendProjectRecordSection(lines, 'Project Visuals', projectVisualLines);
+
+  return `${lines.join('\n')}\n`;
+}
+
+function triggerMarkdownDownload(markdown, filename) {
+  const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+  const objectUrl = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = objectUrl;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.URL.revokeObjectURL(objectUrl);
+}
+
+function escapeMarkdownImageAlt(value) {
+  return (value || '')
+    .replace(/[\[\]\n\r]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function buildMarkdownImage(url, caption, fallbackLabel, size = 'medium') {
+  const alt = escapeMarkdownImageAlt(caption) || fallbackLabel;
+  const normalizedSize = INLINE_IMAGE_SIZE_OPTIONS.some((option) => option.value === size) ? size : 'medium';
+  return `\n\n![${alt}](${url}){size=${normalizedSize}}\n\n`;
+}
+
+function buildMarkdownImageRow(images) {
+  const lines = images.map((image, index) => {
+    const alt = escapeMarkdownImageAlt(image.caption) || `Visual ${index + 1}`;
+    const size = INLINE_IMAGE_SIZE_OPTIONS.some((option) => option.value === image.size) ? image.size : 'medium';
+    return `![${alt}](${image.url}){size=${size}}`;
+  });
+  return `\n\n:::yard-image-row\n${lines.join('\n')}\n:::\n\n`;
 }
 
 function getTodayDateInputValue() {
@@ -225,57 +425,116 @@ function SeverityPillGroup({ value, onChange, disabled = false }) {
   );
 }
 
-function FeedbackAudienceControls({
+function FeedbackVisibilityControls({
   baseAudience,
   includeReviewers,
   onBaseChange,
   onToggleReviewers,
   disabled = false,
 }) {
+  const teamVisible = baseAudience === 'team';
+  const [showProgrammeSupportHelp, setShowProgrammeSupportHelp] = useState(false);
+  const programmeSupportHelpId = 'feedback-programme-support-help';
+
   return (
-    <div className="feedback-audience-controls">
-      <div className="severity-pill-group feedback-audience-group" role="radiogroup" aria-label="Feedback base audience">
-        {FEEDBACK_BASE_AUDIENCE_OPTIONS.map((option) => {
-          const active = baseAudience === option.value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={active}
-              className={`severity-pill audience-${option.value}${active ? ' active' : ''}`}
-              onClick={() => onBaseChange(option.value)}
-              disabled={disabled}
-            >
-              {option.label}
-            </button>
-          );
-        })}
+    <div className="feedback-visibility-controls">
+      <div className="feedback-visibility-heading">Visibility</div>
+
+      <div className="feedback-visibility-row lead-only">
+        <div className="feedback-visibility-copy">
+          <span className="feedback-visibility-label">Project lead</span>
+          <span className="feedback-visibility-note latex-editor-hint">Always included.</span>
+        </div>
       </div>
-      <button
-        type="button"
-        className={`feedback-review-toggle${includeReviewers ? ' active' : ''}`}
-        onClick={() => onToggleReviewers(!includeReviewers)}
-        disabled={disabled}
-        aria-pressed={includeReviewers}
-      >
-        Review access
-      </button>
+
+      <div className="feedback-visibility-row">
+        <div className="feedback-visibility-copy">
+          <span className="feedback-visibility-label">Project team</span>
+        </div>
+        <button
+          type="button"
+          className={`feedback-visibility-switch ${teamVisible ? ' active' : ''}`}
+          onClick={() => onBaseChange(teamVisible ? 'lead' : 'team')}
+          disabled={disabled}
+          role="switch"
+          aria-checked={teamVisible}
+          aria-label="Show feedback to the project team"
+        >
+          <span className="feedback-visibility-switch-track" aria-hidden="true">
+            <span className="feedback-visibility-switch-thumb" />
+          </span>
+        </button>
+      </div>
+
+      <div className="feedback-visibility-row">
+        <div className="feedback-visibility-copy">
+          <span className="feedback-visibility-label feedback-visibility-label-inline">
+            Programme support
+            <span
+              className="latex-editor-help-wrap"
+              onMouseEnter={() => setShowProgrammeSupportHelp(true)}
+              onMouseLeave={() => setShowProgrammeSupportHelp(false)}
+            >
+              <button
+                type="button"
+                className="latex-editor-help-btn"
+                aria-label="Programme support help"
+                aria-describedby={showProgrammeSupportHelp ? programmeSupportHelpId : undefined}
+                aria-expanded={showProgrammeSupportHelp}
+                onFocus={() => setShowProgrammeSupportHelp(true)}
+                onBlur={() => setShowProgrammeSupportHelp(false)}
+                onClick={() => setShowProgrammeSupportHelp((current) => !current)}
+              >
+                (?)
+              </button>
+              {showProgrammeSupportHelp ? (
+                <div
+                  className="latex-editor-help-popover latex-editor-help-popover-inline feedback-visibility-help-popover"
+                  id={programmeSupportHelpId}
+                  role="tooltip"
+                >
+                  Includes all PIs, the RETO, and the programme manager.
+                </div>
+              ) : null}
+            </span>
+          </span>
+        </div>
+        <button
+          type="button"
+          className={`feedback-visibility-switch ${includeReviewers ? ' active' : ''}`}
+          onClick={() => onToggleReviewers(!includeReviewers)}
+          disabled={disabled}
+          role="switch"
+          aria-checked={includeReviewers}
+          aria-label="Show feedback to programme support"
+        >
+          <span className="feedback-visibility-switch-track" aria-hidden="true">
+            <span className="feedback-visibility-switch-thumb" />
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
 
-function SupportingVisualsFields({
-  slidesUrl,
-  onSlidesChange,
+function SupportingVisualUploadsFields({
   visualUrls,
   onUploadFiles,
   onRemoveVisual,
+  onInsertVisual = null,
+  onInsertVisualRow = null,
   disabled,
   uploading,
   description,
 }) {
   const visualCount = visualUrls.length;
+  const [visualCaptions, setVisualCaptions] = useState({});
+  const [visualSizes, setVisualSizes] = useState({});
+  const [insertLayout, setInsertLayout] = useState('single');
+  const [selectedRowUrls, setSelectedRowUrls] = useState([]);
+  const canInsertRows = Boolean(onInsertVisualRow) && visualUrls.length >= 2;
+  const activeSelectedRowUrls = selectedRowUrls.filter((url) => visualUrls.includes(url));
+  const canInsertSelectedRow = canInsertRows && activeSelectedRowUrls.length === 2;
 
   return (
     <div className="form-field supporting-visuals-section">
@@ -290,7 +549,9 @@ function SupportingVisualsFields({
         <div className="form-field">
           <div className="supporting-visuals-subheading">
             <label>Upload</label>
-            <span className="supporting-visuals-count">{visualCount} / {MAX_VISUALS} files</span>
+            {visualCount > 0 ? (
+              <span className="supporting-visuals-count">{visualCount} / {MAX_VISUALS} files</span>
+            ) : null}
           </div>
           <input
             type="file"
@@ -309,35 +570,190 @@ function SupportingVisualsFields({
 
         {visualUrls.length > 0 && (
           <div className="svg-draft-list">
-            {visualUrls.map((url, index) => (
-              <div key={url} className="svg-draft-item">
-                <span className="svg-draft-label">Visual {index + 1}</span>
-                <a href={url} target="_blank" rel="noopener noreferrer" className="slides-open-link">Open</a>
-                <button
-                  type="button"
-                  className="svg-remove-btn"
-                  onClick={() => onRemoveVisual(index)}
-                  aria-label={`Remove visual ${index + 1}`}
-                >
-                  <Trash2 size={14} />
-                </button>
+            {onInsertVisual && canInsertRows ? (
+              <div className="svg-layout-toolbar">
+                <span className="svg-layout-label">Insert layout</span>
+                <div className="svg-draft-size-toggle" role="radiogroup" aria-label="Insert image layout">
+                  <button
+                    type="button"
+                    className={`svg-draft-size-btn ${insertLayout === 'single' ? 'active' : ''}`}
+                    onClick={() => setInsertLayout('single')}
+                    disabled={disabled}
+                    aria-checked={insertLayout === 'single'}
+                    role="radio"
+                  >
+                    Single
+                  </button>
+                  <button
+                    type="button"
+                    className={`svg-draft-size-btn ${insertLayout === 'row' ? 'active' : ''}`}
+                    onClick={() => setInsertLayout('row')}
+                    disabled={disabled}
+                    aria-checked={insertLayout === 'row'}
+                    role="radio"
+                  >
+                    Row
+                  </button>
+                </div>
+                {insertLayout === 'row' ? (
+                  <button
+                    type="button"
+                    className="save-mode-btn tertiary svg-insert-btn"
+                    onClick={() => {
+                      const images = activeSelectedRowUrls.map((url) => ({
+                        url,
+                        caption: visualCaptions[url] || '',
+                        size: visualSizes[url] || 'medium',
+                      }));
+                      onInsertVisualRow(images);
+                    }}
+                    disabled={disabled || !canInsertSelectedRow}
+                  >
+                    Insert row
+                  </button>
+                ) : null}
               </div>
-            ))}
+            ) : null}
+            {visualUrls.map((url, index) => {
+              const caption = visualCaptions[url] || '';
+              const size = visualSizes[url] || 'medium';
+              const visualLabel = `Visual ${index + 1}`;
+              const selectedForRow = activeSelectedRowUrls.includes(url);
+              return (
+                <div key={url} className="svg-draft-item">
+                  {insertLayout === 'row' && canInsertRows ? (
+                    <label
+                      className={`svg-row-select ${selectedForRow ? 'selected' : ''}`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedForRow}
+                        onChange={() => {
+                          setSelectedRowUrls((current) => {
+                            if (current.includes(url)) {
+                              return current.filter((selectedUrl) => selectedUrl !== url);
+                            }
+                            return [...current.filter((selectedUrl) => selectedUrl !== url), url].slice(-2);
+                          });
+                        }}
+                        disabled={disabled}
+                        aria-label={`Select ${visualLabel} for image row`}
+                      />
+                    </label>
+                  ) : null}
+                  <img src={url} alt="" className="svg-draft-thumb" />
+                  <div className="svg-draft-copy">
+                    <span className="svg-draft-filename">{getVisualFilename(url)}</span>
+                    {onInsertVisual ? (
+                      <input
+                        type="text"
+                        className="svg-draft-caption-input"
+                        value={caption}
+                        onChange={(event) => setVisualCaptions((current) => ({ ...current, [url]: event.target.value }))}
+                        placeholder={visualLabel}
+                        disabled={disabled}
+                      />
+                    ) : null}
+                    {onInsertVisual ? (
+                      <div className="svg-draft-size-toggle" role="radiogroup" aria-label={`${visualLabel} image size`}>
+                        {INLINE_IMAGE_SIZE_OPTIONS.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`svg-draft-size-btn ${size === option.value ? 'active' : ''}`}
+                            onClick={() => setVisualSizes((current) => ({ ...current, [url]: option.value }))}
+                            disabled={disabled}
+                            aria-checked={size === option.value}
+                            role="radio"
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="svg-draft-actions">
+                    {onInsertVisual ? (
+                      <button
+                        type="button"
+                        className="save-mode-btn tertiary svg-insert-btn"
+                        onClick={() => onInsertVisual(url, caption, index, size)}
+                        disabled={disabled || insertLayout === 'row'}
+                      >
+                        Insert
+                      </button>
+                    ) : null}
+                    <a href={url} target="_blank" rel="noopener noreferrer" className="slides-open-link">Open</a>
+                    <button
+                      type="button"
+                      className="svg-remove-btn"
+                      onClick={() => onRemoveVisual(index)}
+                      aria-label={`Remove visual ${index + 1}`}
+                      disabled={disabled}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
-
-        <div className="form-field">
-          <label>Link</label>
-          <input
-            type="text"
-            value={slidesUrl}
-            onChange={(event) => onSlidesChange(event.target.value)}
-            placeholder="Paste a slides URL or iframe embed code"
-            disabled={disabled}
-          />
-        </div>
       </div>
     </div>
+  );
+}
+
+function ProjectSlidesLinkFields({
+  slidesUrl,
+  onSlidesChange,
+  disabled,
+  legacyVisualUrls,
+  onRemoveVisual,
+}) {
+  return (
+    <>
+      <div className="form-field">
+        <label>Link</label>
+        <input
+          type="text"
+          value={slidesUrl}
+          onChange={(event) => onSlidesChange(event.target.value)}
+          placeholder="Paste slides URL or embed code"
+          disabled={disabled}
+        />
+      </div>
+
+      {legacyVisualUrls.length > 0 && (
+        <div className="form-field supporting-visuals-section">
+          <div className="supporting-visuals-heading">
+            <label>Existing uploaded visuals</label>
+          </div>
+          <p className="form-field-hint">
+            Older project visuals can still be removed here if you no longer want them shown on the page.
+          </p>
+          <div className="supporting-visuals-stack">
+            <div className="svg-draft-list">
+              {legacyVisualUrls.map((url, index) => (
+                <div key={url} className="svg-draft-item">
+                  <span className="svg-draft-label">Visual {index + 1}</span>
+                  <a href={url} target="_blank" rel="noopener noreferrer" className="slides-open-link">Open</a>
+                  <button
+                    type="button"
+                    className="svg-remove-btn"
+                    onClick={() => onRemoveVisual(index)}
+                    aria-label={`Remove project visual ${index + 1}`}
+                    disabled={disabled}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -359,15 +775,19 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const [projectSlidesDraft, setProjectSlidesDraft] = useState('');
   const [projectSvgDrafts, setProjectSvgDrafts] = useState([]);
   const [projectSlidesSaving, setProjectSlidesSaving] = useState(false);
+  const [projectExporting, setProjectExporting] = useState(false);
   const [svgUploading, setSvgUploading] = useState(false);
-  const [editingEntry, setEditingEntry] = useState(null); // { type, origIndex, title, content }
+  const [editingEntry, setEditingEntry] = useState(null); // updates use origIndex; feedback uses id
+  const [editingEntrySubmitting, setEditingEntrySubmitting] = useState(false);
+  const [editingEntrySubmitMode, setEditingEntrySubmitMode] = useState('');
+  const editingEntrySubmittingRef = useRef(false);
   const [showChallengeForm, setShowChallengeForm] = useState(false);
   const [challengeForm, setChallengeForm] = useState({ description: '', severity: 'slowing' });
   const [challengeFormError, setChallengeFormError] = useState('');
   const [challengeSubmitting, setChallengeSubmitting] = useState(false);
-  const [editingChallenge, setEditingChallenge] = useState(null); // { origIndex, description, severity }
+  const [editingChallenge, setEditingChallenge] = useState(null); // { id, description, severity }
   const [editingChallengeSubmitting, setEditingChallengeSubmitting] = useState(false);
-  const [resolvingChallenge, setResolvingChallenge] = useState(null); // { origIndex, description, resolutionNote }
+  const [resolvingChallenge, setResolvingChallenge] = useState(null); // { id, description, resolutionNote }
   const [resolvingChallengeSubmitting, setResolvingChallengeSubmitting] = useState(false);
   const [showResolvedChallenges, setShowResolvedChallenges] = useState(false);
   const [editingMilestone, setEditingMilestone] = useState(null); // { id, title, dueDate }
@@ -378,15 +798,69 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const [teamContributorDrafts, setTeamContributorDrafts] = useState([]);
   const [showAbstract, setShowAbstract] = useState(false);
   const [showAllProgress, setShowAllProgress] = useState(false);
-  const [showAllFeedback, setShowAllFeedback] = useState(false);
   const [showExpandedMilestones, setShowExpandedMilestones] = useState(false);
   const [projectSvgIndex, setProjectSvgIndex] = useState(0);
   const [entrySvgIndexes, setEntrySvgIndexes] = useState({});
-  const [expandedFeedback, setExpandedFeedback] = useState({});
+  const progressEditorRef = useRef(null);
+  const editingEditorRef = useRef(null);
+
+  const downloadProjectRecord = useCallback(async () => {
+    if (!projectId || projectExporting) return;
+    setProjectExporting(true);
+    try {
+      const response = await fetch(api.buildUrl(`/projects/${projectId}/export.md`), {
+        credentials: 'include',
+        headers: { Accept: 'text/markdown' },
+      });
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || contentType.includes('text/html')) {
+        throw new Error(`Export request failed with status ${response.status}`);
+      }
+
+      const disposition = response.headers.get('content-disposition') || '';
+      const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = filenameMatch?.[1] || getProjectRecordExportFilename(projectId);
+      const markdown = await response.text();
+      triggerMarkdownDownload(markdown, filename);
+    } catch (err) {
+      console.warn('Server project export failed; using client-side project record fallback:', err);
+      try {
+        const markdown = buildClientProjectRecordMarkdown({
+          project,
+          getPerson,
+          milestones,
+          permissions,
+          user,
+        });
+        if (!markdown.trim()) {
+          throw new Error('No project record content available');
+        }
+        triggerMarkdownDownload(markdown, getProjectRecordExportFilename(projectId));
+        showToast('Downloaded project record');
+      } catch (fallbackErr) {
+        console.error('Failed to download project record:', fallbackErr);
+        showToast('Failed to download project record', 'error');
+      }
+    } finally {
+      setProjectExporting(false);
+    }
+  }, [getPerson, milestones, permissions, project, projectExporting, projectId, showToast, user]);
 
   const saveEntryEdit = useCallback(async (publish = false) => {
-    if (!editingEntry) return;
-    const { type, origIndex, title, content, slidesUrl, svgUrls, baseAudience, includeReviewers } = editingEntry;
+    if (!editingEntry || editingEntrySubmittingRef.current) return;
+    const { type, id, origIndex, title, content, slidesUrl, svgUrls, baseAudience, includeReviewers } = editingEntry;
+    const trimmedTitle = (title || '').trim();
+    const trimmedContent = (content || '').trim();
+    if (type === 'feedback' && !trimmedContent) return;
+    if (!trimmedTitle && !trimmedContent) return;
+    if (type === 'feedback' && !id) {
+      showToast('This feedback entry needs to be refreshed before it can be edited', 'error');
+      return;
+    }
+    const submitMode = type === 'feedback' ? 'feedback' : (publish ? 'publish' : 'quiet');
+    editingEntrySubmittingRef.current = true;
+    setEditingEntrySubmitting(true);
+    setEditingEntrySubmitMode(submitMode);
     try {
       const payload = { title, content, publish };
       if (type === 'updates') {
@@ -396,13 +870,18 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
         payload.audience = normalizeFeedbackBaseAudience(baseAudience);
         payload.includeReviewers = Boolean(includeReviewers);
       }
-      await api.put(`/projects/${projectId}/${type}/${origIndex}`, payload);
+      const entryTarget = type === 'feedback' ? id : origIndex;
+      await api.put(`/projects/${projectId}/${type}/${entryTarget}`, payload);
       await refreshProjects();
       setEditingEntry(null);
       showToast(type === 'feedback' ? 'Feedback saved' : (publish ? 'Entry published' : 'Entry saved quietly'));
     } catch (err) {
       console.error('Failed to update entry:', err);
       showToast(type === 'feedback' ? 'Failed to save feedback' : 'Failed to update entry', 'error');
+    } finally {
+      editingEntrySubmittingRef.current = false;
+      setEditingEntrySubmitting(false);
+      setEditingEntrySubmitMode('');
     }
   }, [editingEntry, projectId, refreshProjects, showToast]);
 
@@ -580,12 +1059,6 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
     });
   }, [appendSvgUrl, editingEntry?.svgUrls, uploadVisualFiles]);
 
-  const handleProjectSvgUpload = useCallback(async (files) => {
-    await uploadVisualFiles(files, projectSvgDrafts?.length || 0, (url) => {
-      setProjectSvgDrafts((current) => appendSvgUrl(current, url));
-    });
-  }, [appendSvgUrl, projectSvgDrafts, uploadVisualFiles]);
-
   const deleteUploadedSvgIfUnused = useCallback(async (url) => {
     const reference = getUploadedVisualReference(url);
     if (!reference) return;
@@ -627,6 +1100,42 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
       deleteUploadedSvgIfUnused(removedUrl);
     }
   }, [deleteUploadedSvgIfUnused, projectSvgDrafts, removeSvgUrlAtIndex]);
+
+  const insertProgressVisual = useCallback((url, caption, index, size) => {
+    const markdown = buildMarkdownImage(url, caption, `Visual ${index + 1}`, size);
+    if (progressEditorRef.current?.insertText) {
+      progressEditorRef.current.insertText(markdown);
+      return;
+    }
+    setProgressForm((current) => ({ ...current, content: `${current.content || ''}${markdown}` }));
+  }, []);
+
+  const insertProgressVisualRow = useCallback((images) => {
+    const markdown = buildMarkdownImageRow(images);
+    if (progressEditorRef.current?.insertText) {
+      progressEditorRef.current.insertText(markdown);
+      return;
+    }
+    setProgressForm((current) => ({ ...current, content: `${current.content || ''}${markdown}` }));
+  }, []);
+
+  const insertEditingVisual = useCallback((url, caption, index, size) => {
+    const markdown = buildMarkdownImage(url, caption, `Visual ${index + 1}`, size);
+    if (editingEditorRef.current?.insertText) {
+      editingEditorRef.current.insertText(markdown);
+      return;
+    }
+    setEditingEntry((current) => current ? { ...current, content: `${current.content || ''}${markdown}` } : current);
+  }, []);
+
+  const insertEditingVisualRow = useCallback((images) => {
+    const markdown = buildMarkdownImageRow(images);
+    if (editingEditorRef.current?.insertText) {
+      editingEditorRef.current.insertText(markdown);
+      return;
+    }
+    setEditingEntry((current) => current ? { ...current, content: `${current.content || ''}${markdown}` } : current);
+  }, []);
 
   const dismissProgressComposer = useCallback(async () => {
     if (!showProgressForm || progressSubmitting || svgUploading) return;
@@ -675,7 +1184,14 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
   const handleProgressSubmit = async (publish = true, event = null) => {
     event?.preventDefault?.();
     setProgressFormError('');
-    if (!progressForm.title.trim() || !progressForm.content.trim()) {
+    const trimmedTitle = progressForm.title.trim();
+    const trimmedContent = progressForm.content.trim();
+    if (showProgressForm === 'feedback') {
+      if (!trimmedContent) {
+        setProgressFormError('Please add some feedback before saving.');
+        return;
+      }
+    } else if (!trimmedTitle || !trimmedContent) {
       setProgressFormError('Please fill in all required fields.');
       return;
     }
@@ -689,9 +1205,6 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
         publish,
       };
       if (showProgressForm !== 'feedback') {
-        if (progressForm.slidesUrl.trim()) {
-          payload.slidesUrl = normalizeSlidesInput(progressForm.slidesUrl);
-        }
         payload.svgUrls = (progressForm.svgUrls || []).map(normalizeSvgInput).filter(Boolean);
       } else {
         payload.audience = normalizeFeedbackBaseAudience(progressForm.feedbackBaseAudience);
@@ -744,10 +1257,15 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
 
   const saveChallengeEdit = useCallback(async (publish = false) => {
     if (!editingChallenge) return;
+    const challengeId = editingChallenge.id;
+    if (!challengeId) {
+      showToast('Challenge cannot be edited until it has been refreshed', 'error');
+      return;
+    }
     setEditingChallengeSubmitting(true);
     try {
-      await api.put(`/projects/${projectId}/challenges/${editingChallenge.origIndex}`, {
-        description: editingChallenge.description,
+      await api.put(`/projects/${projectId}/challenges/${encodeURIComponent(challengeId)}`, {
+        description: editingChallenge.description.trim(),
         severity: normalizeChallengeSeverity(editingChallenge.severity),
         publish,
       });
@@ -764,9 +1282,14 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
 
   const handleResolveChallenge = useCallback(async () => {
     if (!resolvingChallenge) return;
+    const challengeId = resolvingChallenge.id;
+    if (!challengeId) {
+      showToast('Challenge cannot be resolved until it has been refreshed', 'error');
+      return;
+    }
     setResolvingChallengeSubmitting(true);
     try {
-      await api.post(`/projects/${projectId}/challenges/${resolvingChallenge.origIndex}/resolve`, {
+      await api.post(`/projects/${projectId}/challenges/${encodeURIComponent(challengeId)}/resolve`, {
         resolutionNote: resolvingChallenge.resolutionNote || '',
       });
       await refreshProjects();
@@ -805,6 +1328,18 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
 
   if (!project) return <div>Project not found</div>;
 
+  const editingEntryHasContent = Boolean((editingEntry?.title || '').trim() || (editingEntry?.content || '').trim());
+  const editingFeedbackHasContent = Boolean((editingEntry?.content || '').trim());
+  const editingFeedbackMissingId = Boolean(editingEntry?.type === 'feedback' && !editingEntry?.id);
+  const editingEntrySaveDisabled = editingEntrySubmitting
+    || svgUploading
+    || editingFeedbackMissingId
+    || (editingEntry?.type === 'feedback' ? !editingFeedbackHasContent : !editingEntryHasContent);
+  const closeEditingEntry = () => {
+    if (editingEntrySubmitting) return;
+    setEditingEntry(null);
+  };
+
   const inst = getInstitution(project.institution);
   const lead = getPerson(getProjectLeadId(project));
   const contributors = getProjectContributorIds(project).map((id) => getPerson(id)).filter(Boolean);
@@ -818,21 +1353,18 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
     .sort((a, b) => (b.dueDate || '').localeCompare(a.dueDate || ''));
   const currentChallenges = project.currentChallenges || [];
   const resolvedChallenges = project.resolvedChallenges || [];
-  const progressEntries = (project.updates || [])
-    .map((u, idx) => ({ ...u, entryType: 'updates', origIndex: idx }))
-    .sort((a, b) => ((b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '')));
   const feedbackEntries = (project.feedback || [])
-    .map((f, idx) => ({ ...f, entryType: 'feedback', origIndex: idx }))
-    .filter((entry) => access.canViewFeedbackEntry(entry))
-    .sort((a, b) => ((b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '')));
-  const showFeedbackSection = canAddFeedback || feedbackEntries.length > 0;
+    .map((f) => ({ ...f, entryType: 'feedback' }))
+    .filter((entry) => access.canViewFeedbackEntry(entry));
+  const progressEntries = [
+    ...(project.updates || []).map((u, idx) => ({ ...u, entryType: 'updates', origIndex: idx })),
+    ...feedbackEntries,
+  ].sort((a, b) => ((b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '')));
   const abstractPreview = project.abstract
     ? `${project.abstract.substring(0, 220).trim()}${project.abstract.length > 220 ? '...' : ''}`
     : 'No abstract added yet.';
   const visibleProgressEntries = showAllProgress ? progressEntries : progressEntries.slice(0, 2);
   const hiddenProgressCount = Math.max(0, progressEntries.length - visibleProgressEntries.length);
-  const visibleFeedbackEntries = showAllFeedback ? feedbackEntries : feedbackEntries.slice(0, 2);
-  const hiddenFeedbackCount = Math.max(0, feedbackEntries.length - visibleFeedbackEntries.length);
   const recentlyResolvedSection = resolvedChallenges.length > 0 && (
     <div className="pf-section pf-collapsible-section">
       <button
@@ -905,14 +1437,18 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                           <button
                             className="save-mode-btn quiet"
                             type="button"
-                            onClick={() => setEditingChallenge({ origIndex: i, description: c.description, severity: normalizeChallengeSeverity(c.severity) })}
+                            disabled={!c.id}
+                            title={c.id ? 'Edit' : 'Refresh before editing'}
+                            onClick={() => c.id && setEditingChallenge({ id: c.id, description: c.description, severity: normalizeChallengeSeverity(c.severity) })}
                           >
                             Edit
                           </button>
                           <button
                             className="save-mode-btn publish"
                             type="button"
-                            onClick={() => setResolvingChallenge({ origIndex: i, description: c.description, resolutionNote: '' })}
+                            disabled={!c.id}
+                            title={c.id ? 'Resolve' : 'Refresh before resolving'}
+                            onClick={() => c.id && setResolvingChallenge({ id: c.id, description: c.description, resolutionNote: '' })}
                           >
                             Resolve
                           </button>
@@ -1087,9 +1623,43 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
 
   return (
     <div data-testid="project-full-page" className="project-full-page">
-      <button data-testid="back-to-projects" className="back-btn" onClick={onBack}>
-        <ArrowLeft size={16} /> Back to Projects
-      </button>
+      <div className="project-full-topbar">
+        <button data-testid="back-to-projects" className="back-btn" onClick={onBack}>
+          <ArrowLeft size={16} /> Back to Projects
+        </button>
+        <div className="project-export-links">
+          <span className="project-export-tooltip-wrap">
+            <button
+              type="button"
+              className="project-export-icon-btn"
+              onClick={downloadProjectRecord}
+              disabled={projectExporting}
+              aria-label="Download project record"
+              aria-describedby="project-export-download-tooltip"
+            >
+              <Download size={15} aria-hidden="true" />
+            </button>
+            <span className="project-export-tooltip" id="project-export-download-tooltip" role="tooltip">
+              Download project record
+            </span>
+          </span>
+          <span className="project-export-tooltip-wrap">
+            <a
+              className="project-export-icon-btn"
+              href={`/projects/${projectId}/export/print`}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Print view"
+              aria-describedby="project-export-print-tooltip"
+            >
+              <ExternalLink size={15} aria-hidden="true" />
+            </a>
+            <span className="project-export-tooltip" id="project-export-print-tooltip" role="tooltip">
+              Print view
+            </span>
+          </span>
+        </div>
+      </div>
       <div className="project-full-header" style={{ borderLeftColor: inst?.color || '#E5E7EB' }}>
         <div className="project-full-header-copy">
           <EditableField
@@ -1208,43 +1778,53 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
           <div className="pf-section">
             <div className="pf-section-header">
               <h3>Progress</h3>
-              {canAddUpdate && (
+              {(canAddUpdate || canAddFeedback) && (
                 <div className="pf-section-actions">
-                  <button className="action-btn small" onClick={() => openProgressComposer('update')}>
-                    <Plus size={14} /> Add Update
-                  </button>
+                  {canAddUpdate && (
+                    <button className="action-btn small" onClick={() => openProgressComposer('update')}>
+                      <Plus size={14} /> Add Update
+                    </button>
+                  )}
+                  {canAddFeedback && (
+                    <button className="action-btn small feedback-btn" onClick={() => openProgressComposer('feedback')}>
+                      <Plus size={14} /> Add Feedback
+                    </button>
+                  )}
                 </div>
               )}
             </div>
             <div className="progress-catalogue-list">
               {visibleProgressEntries
                 .map((entry, i) => {
+                  const canEditEntry = access.canEditProjectEntry(entry) && (entry.entryType !== 'feedback' || Boolean(entry.id));
+                  const uninsertedVisualUrls = entry.entryType === 'updates' ? getUninsertedSvgUrls(entry) : [];
                   return (
-                    <div key={i} className={`update-item ${entry.entryType === 'feedback' ? 'feedback-item' : ''} ${expandedUpdates[i] ? 'expanded' : ''}`}>
+                    <div key={`${entry.entryType}-${entry.id || entry.origIndex || i}`} className={`update-item ${entry.entryType === 'feedback' ? 'feedback-item' : ''} ${expandedUpdates[i] ? 'expanded' : ''}`}>
                       <div className="update-header" onClick={() => setExpandedUpdates(prev => ({ ...prev, [i]: !prev[i] }))}>
                         <div className="update-row-grid">
-                          <div className="update-title">{entry.title}</div>
+                          <div className="update-title">{entry.entryType === 'feedback' ? getFeedbackDisplayTitle(entry) : entry.title}</div>
                           <span className={`entry-type-badge ${entry.entryType}`}>
                             {entry.entryType === 'feedback' ? 'Feedback' : 'Update'}
                           </span>
                           <div className="update-date-cell">
-                            <span className="update-meta-date">{formatDate(entry.date)}</span>
+                            <span className="update-meta-date">{formatDate(entry.lastModified || entry.date)}</span>
                             <div className="update-header-right">
-                              {access.canEditProjectEntry(entry) && (
+                              {canEditEntry && (
                                 <button
                                   className="entry-edit-btn"
                                   onClick={e => {
                                     e.stopPropagation();
                                     setEditingEntry({
                                       type: entry.entryType,
-                                    origIndex: entry.origIndex,
-                                    title: entry.title,
-                                    content: entry.content,
-                                    author: entry.author,
-                                    ...getFeedbackAudienceState(entry),
-                                    slidesUrl: entry.slidesUrl || '',
-                                    svgUrls: getSvgUrls(entry),
-                                  });
+                                      id: entry.id,
+                                      origIndex: entry.origIndex,
+                                      title: entry.title,
+                                      content: entry.content,
+                                      author: entry.author,
+                                      ...getFeedbackAudienceState(entry),
+                                      slidesUrl: entry.slidesUrl || '',
+                                      svgUrls: getSvgUrls(entry),
+                                    });
                                   }}
                                   title="Edit"
                                 >
@@ -1260,6 +1840,11 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                         {entry.entryType === 'feedback' && entry.author && (
                           <div className="update-author-line">
                             {entry.author}
+                            <span className="feedback-audience-badges">
+                              {getFeedbackAudienceBadges(entry).map((badge) => (
+                                <span key={badge} className="feedback-audience-badge">{badge}</span>
+                              ))}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -1283,10 +1868,10 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                               </div>
                             </div>
                           )}
-                          {entry.entryType === 'updates' && getSvgUrls(entry).length > 0 && (
+                          {entry.entryType === 'updates' && uninsertedVisualUrls.length > 0 && (
                             <div className="entry-svg-block">
                               <SvgCarousel
-                                urls={getSvgUrls(entry)}
+                                urls={uninsertedVisualUrls}
                                 index={entrySvgIndexes[i] || 0}
                                 onChange={(nextIndex) => setEntrySvgIndexes((current) => ({ ...current, [i]: nextIndex }))}
                                 label={`${entry.title} supporting visual`}
@@ -1300,7 +1885,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                 })}
             </div>
             {progressEntries.length === 0 && (
-              <p className="empty-state">No updates recorded yet.</p>
+              <p className="empty-state">No updates or feedback recorded yet.</p>
             )}
             {progressEntries.length > 2 && (
               <button
@@ -1322,102 +1907,6 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
               </button>
             )}
           </div>
-
-          {showFeedbackSection && (
-            <div className="pf-section">
-              <div className="pf-section-header">
-                <div className="pf-section-heading-stack">
-                  <h3>Feedback</h3>
-                  <p className="pf-section-note">Choose a base audience, then optionally include Review access.</p>
-                </div>
-                {canAddFeedback && (
-                  <div className="pf-section-actions">
-                    <button className="action-btn small feedback-btn" onClick={() => openProgressComposer('feedback')}>
-                      <Plus size={14} /> Add Feedback
-                    </button>
-                  </div>
-                )}
-              </div>
-              <div className="progress-catalogue-list">
-                {visibleFeedbackEntries.map((entry, i) => (
-                  <div key={i} className={`update-item feedback-item ${expandedFeedback[i] ? 'expanded' : ''}`}>
-                    <div className="update-header" onClick={() => setExpandedFeedback((prev) => ({ ...prev, [i]: !prev[i] }))}>
-                      <div className="update-row-grid">
-                        <div className="update-title">{entry.title}</div>
-                        <span className="entry-type-badge feedback">Feedback</span>
-                        <div className="update-date-cell">
-                          <span className="update-meta-date">{formatDate(entry.lastModified || entry.date)}</span>
-                          <div className="update-header-right">
-                            {access.canEditProjectEntry(entry) && (
-                              <button
-                                className="entry-edit-btn"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingEntry({
-                                    type: entry.entryType,
-                                    origIndex: entry.origIndex,
-                                    title: entry.title,
-                                    content: entry.content,
-                                    author: entry.author,
-                                    ...getFeedbackAudienceState(entry),
-                                    slidesUrl: '',
-                                    svgUrls: [],
-                                  });
-                                }}
-                                title="Edit"
-                              >
-                                Edit
-                              </button>
-                            )}
-                            <span className="update-toggle-chevron" aria-hidden="true">
-                              {expandedFeedback[i] ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      {entry.author && (
-                        <div className="update-author-line">
-                          {entry.author}
-                          <span className="feedback-audience-badges">
-                            {getFeedbackAudienceBadges(entry).map((badge) => (
-                              <span key={badge} className="feedback-audience-badge">{badge}</span>
-                            ))}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                    {expandedFeedback[i] && (
-                      <div className="update-content">
-                        <LatexContent text={entry.content} className="update-content-body" />
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {feedbackEntries.length === 0 && (
-                <p className="empty-state">No feedback visible here yet.</p>
-              )}
-              {feedbackEntries.length > 2 && (
-                <button
-                  type="button"
-                  className="pf-secondary-toggle"
-                  onClick={() => setShowAllFeedback((current) => !current)}
-                >
-                  {showAllFeedback ? (
-                    <>
-                      <span className="inline-chevron-control" aria-hidden="true"><ChevronUp size={15} /></span>
-                      Show fewer entries
-                    </>
-                  ) : (
-                    <>
-                      <span className="inline-chevron-control" aria-hidden="true"><ChevronDown size={15} /></span>
-                      Show {hiddenFeedbackCount} older {hiddenFeedbackCount === 1 ? 'entry' : 'entries'}
-                    </>
-                  )}
-                </button>
-              )}
-            </div>
-          )}
 
           <div className="pf-section">
             <div className="pf-section-header">
@@ -1468,7 +1957,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
                 )}
               </div>
             ) : (
-              <p className="empty-state">No slides or uploaded visuals added yet.</p>
+              <p className="empty-state">No presentation slides added yet.</p>
             )}
           </div>
       </div>
@@ -1501,19 +1990,20 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
       {showProgressForm && (
         <WritingModal
           title={`Add ${showProgressForm === 'feedback' ? 'Feedback' : 'Update'}`}
-          subtitle={showProgressForm === 'feedback' ? 'Choose a base audience, then optionally include Review access.' : 'Record a project update that others can refer back to later. Save quietly to keep it on the project page, or Publish to bring it back into shared programme attention.'}
+          subtitle={showProgressForm === 'feedback' ? 'You can keep this feedback focused or share it more widely.' : 'Record a project update that others can refer back to later. Save quietly to keep it on the project page, or Publish to bring it back into shared programme attention.'}
           onClose={dismissProgressComposer}
         >
           {progressFormError && <div className="form-error-box">{progressFormError}</div>}
           <form onSubmit={(event) => handleProgressSubmit(showProgressForm === 'feedback' ? false : true, event)} className="cg-form">
-            <div className="form-field">
-              <label>Title</label>
-              <input type="text" value={progressForm.title} onChange={e => setProgressForm({ ...progressForm, title: e.target.value })} required placeholder={showProgressForm === 'feedback' ? 'e.g. Q1 Review Feedback' : 'e.g. March Progress Summary'} disabled={progressSubmitting} />
-            </div>
+            {showProgressForm !== 'feedback' && (
+              <div className="form-field">
+                <label>Title</label>
+                <input type="text" value={progressForm.title} onChange={e => setProgressForm({ ...progressForm, title: e.target.value })} required placeholder="e.g. March Progress Summary" disabled={progressSubmitting} />
+              </div>
+            )}
             {showProgressForm === 'feedback' && (
               <div className="form-field">
-                <label>Audience</label>
-                <FeedbackAudienceControls
+                <FeedbackVisibilityControls
                   baseAudience={normalizeFeedbackBaseAudience(progressForm.feedbackBaseAudience)}
                   includeReviewers={Boolean(progressForm.feedbackIncludeReviewers)}
                   onBaseChange={(value) => setProgressForm({ ...progressForm, feedbackBaseAudience: value })}
@@ -1525,6 +2015,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
             <div className="form-field">
               <label>Content</label>
               <LatexTextarea
+                ref={progressEditorRef}
                 value={progressForm.content}
                 onChange={(value) => setProgressForm({ ...progressForm, content: value })}
                 rows={10}
@@ -1535,12 +2026,12 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
               />
             </div>
             {showProgressForm === 'update' && (
-              <SupportingVisualsFields
-                slidesUrl={progressForm.slidesUrl}
-                onSlidesChange={(value) => setProgressForm({ ...progressForm, slidesUrl: value })}
+              <SupportingVisualUploadsFields
                 visualUrls={progressForm.svgUrls}
                 onUploadFiles={handleProgressSvgUpload}
                 onRemoveVisual={removeProgressSvg}
+                onInsertVisual={insertProgressVisual}
+                onInsertVisualRow={insertProgressVisualRow}
                 disabled={progressSubmitting}
                 uploading={svgUploading}
                 description="Figures, diagrams, charts, and photos to include with this update."
@@ -1550,7 +2041,7 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
               <button type="button" className="save-mode-btn tertiary" onClick={dismissProgressComposer} disabled={progressSubmitting || svgUploading}>Cancel</button>
               {showProgressForm === 'feedback' ? (
                 <button type="button" className="save-mode-btn publish" onClick={() => handleProgressSubmit(false)} disabled={progressSubmitting || svgUploading}>
-                  {progressSubmitting ? 'Saving...' : 'Save Feedback'}
+                  {progressSubmitting ? 'Saving...' : 'Save'}
                 </button>
               ) : (
                 <>
@@ -1568,23 +2059,20 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
       {showProjectSlidesForm && (
         <WritingModal
           title={project.slidesUrl || projectSvgUrls.length > 0 ? 'Edit Presentation Slides' : 'Add Presentation Slides'}
-          subtitle="Add a slides link or upload visuals to display project-level material directly on this page."
+          subtitle=""
           onClose={() => setShowProjectSlidesForm(false)}
         >
           <div className="cg-form">
-            <SupportingVisualsFields
+            <ProjectSlidesLinkFields
               slidesUrl={projectSlidesDraft}
               onSlidesChange={setProjectSlidesDraft}
-              visualUrls={projectSvgDrafts}
-              onUploadFiles={handleProjectSvgUpload}
+              legacyVisualUrls={projectSvgDrafts}
               onRemoveVisual={removeProjectSvg}
               disabled={projectSlidesSaving}
-              uploading={svgUploading}
-              description="Figures, diagrams, charts, and photos to include with this project section."
             />
             <div className="writing-form-actions">
-              <button type="button" className="save-mode-btn tertiary" onClick={() => setShowProjectSlidesForm(false)} disabled={projectSlidesSaving || svgUploading}>Cancel</button>
-              <button type="button" className="save-mode-btn publish" onClick={saveProjectSlides} disabled={projectSlidesSaving || svgUploading}>Save Slides</button>
+              <button type="button" className="save-mode-btn tertiary" onClick={() => setShowProjectSlidesForm(false)} disabled={projectSlidesSaving}>Cancel</button>
+              <button type="button" className="save-mode-btn publish" onClick={saveProjectSlides} disabled={projectSlidesSaving}>Save Slides</button>
             </div>
           </div>
         </WritingModal>
@@ -1594,68 +2082,93 @@ export default function ProjectFullPage({ projectId, onBack, onPersonClick }) {
         <WritingModal
           title={`Edit ${editingEntry.type === 'feedback' ? 'Feedback' : 'Update'}`}
           subtitle={editingEntry.type === 'feedback'
-            ? 'Adjust the base audience and decide whether to include Review access.'
+            ? 'You can keep this feedback focused or share it more widely.'
             : 'Use Save quietly for wording fixes and Publish when the revised entry should resurface in shared programme attention.'}
-          onClose={() => setEditingEntry(null)}
+          onClose={closeEditingEntry}
         >
           <div className="cg-form">
-            <div className="form-field">
-              <label>Title</label>
-              <input
-                type="text"
-                value={editingEntry.title}
-                onChange={(e) => setEditingEntry({ ...editingEntry, title: e.target.value })}
-                placeholder="Entry title"
-                disabled={progressSubmitting}
-              />
-            </div>
+            {editingEntry.type !== 'feedback' && (
+              <div className="form-field">
+                <label>Title</label>
+                <input
+                  type="text"
+                  value={editingEntry.title}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, title: e.target.value })}
+                  placeholder="Entry title"
+                  disabled={editingEntrySubmitting}
+                />
+              </div>
+            )}
             <div className="form-field">
               <label>Content</label>
               <LatexTextarea
+                ref={editingEditorRef}
                 value={editingEntry.content}
                 onChange={(value) => setEditingEntry({ ...editingEntry, content: value })}
                 rows={12}
-                disabled={progressSubmitting}
+                placeholder=""
+                disabled={editingEntrySubmitting}
                 autoFocus
                 previewEmptyText="Nothing to preview yet."
               />
+              {editingEntry.type === 'feedback' && !editingFeedbackHasContent && (
+                <p className="form-field-hint">Add some feedback before saving.</p>
+              )}
+              {editingEntry.type !== 'feedback' && !editingEntryHasContent && (
+                <p className="form-field-hint">Add a title or some content before saving.</p>
+              )}
             </div>
             {editingEntry.type === 'feedback' && (
               <div className="form-field">
-                <label>Audience</label>
-                <FeedbackAudienceControls
+                <FeedbackVisibilityControls
                   baseAudience={normalizeFeedbackBaseAudience(editingEntry.baseAudience || editingEntry.audience)}
                   includeReviewers={Boolean(editingEntry.includeReviewers)}
                   onBaseChange={(value) => setEditingEntry({ ...editingEntry, baseAudience: value, audience: value })}
                   onToggleReviewers={(value) => setEditingEntry({ ...editingEntry, includeReviewers: value })}
-                  disabled={progressSubmitting}
+                  disabled={editingEntrySubmitting}
                 />
               </div>
             )}
             {editingEntry.type === 'updates' && (
-              <>
-                <SupportingVisualsFields
-                  slidesUrl={editingEntry.slidesUrl || ''}
-                  onSlidesChange={(value) => setEditingEntry({ ...editingEntry, slidesUrl: value })}
-                  visualUrls={editingEntry.svgUrls || []}
-                  onUploadFiles={handleEditSvgUpload}
-                  onRemoveVisual={removeEditingSvg}
-                  disabled={progressSubmitting}
-                  uploading={svgUploading}
-                  description="Figures, diagrams, charts, and photos to include with this update."
-                />
-              </>
+              <SupportingVisualUploadsFields
+                visualUrls={editingEntry.svgUrls || []}
+                onUploadFiles={handleEditSvgUpload}
+                onRemoveVisual={removeEditingSvg}
+                onInsertVisual={insertEditingVisual}
+                onInsertVisualRow={insertEditingVisualRow}
+                disabled={editingEntrySubmitting}
+                uploading={svgUploading}
+                description="Figures, diagrams, charts, and photos to include with this update."
+              />
             )}
             {editingEntry.type === 'feedback' && editingEntry.author && (
               <div className="form-inline-note">Author: {editingEntry.author}</div>
             )}
             <div className="writing-form-actions">
               {editingEntry.type === 'feedback' ? (
-                <button className="save-mode-btn publish" onClick={() => saveEntryEdit(false)} disabled={progressSubmitting || svgUploading}>Save Feedback</button>
+                <button
+                  className="save-mode-btn publish"
+                  onClick={() => saveEntryEdit(false)}
+                  disabled={editingEntrySaveDisabled}
+                >
+                  {editingEntrySubmitting && editingEntrySubmitMode === 'feedback' ? 'Saving...' : 'Save'}
+                </button>
               ) : (
                 <>
-                  <button className="save-mode-btn quiet" onClick={() => saveEntryEdit(false)} disabled={progressSubmitting || svgUploading}>Save quietly</button>
-                  <button className="save-mode-btn publish" onClick={() => saveEntryEdit(true)} disabled={progressSubmitting || svgUploading}>Publish</button>
+                  <button
+                    className="save-mode-btn quiet"
+                    onClick={() => saveEntryEdit(false)}
+                    disabled={editingEntrySaveDisabled}
+                  >
+                    {editingEntrySubmitting && editingEntrySubmitMode === 'quiet' ? 'Saving...' : 'Save quietly'}
+                  </button>
+                  <button
+                    className="save-mode-btn publish"
+                    onClick={() => saveEntryEdit(true)}
+                    disabled={editingEntrySaveDisabled}
+                  >
+                    {editingEntrySubmitting && editingEntrySubmitMode === 'publish' ? 'Publishing...' : 'Publish'}
+                  </button>
                 </>
               )}
             </div>

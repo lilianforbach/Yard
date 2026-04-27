@@ -86,7 +86,7 @@ function getActiveWindowSummary(note) {
   return `Active window ends in ${daysUntilActiveEnds} days`;
 }
 
-export default function ConceptNotes() {
+export default function ConceptNotes({ onPanelOpen }) {
   const { permissions } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const {
@@ -218,10 +218,34 @@ export default function ConceptNotes() {
   );
 
   useEffect(() => {
-    if (requestedNoteId) {
+    if (!requestedNoteId) return;
+
+    if (conceptNotes.length === 0) {
       setSelectedNoteId(requestedNoteId);
+      return;
     }
-  }, [requestedNoteId]);
+
+    const requestedNote = conceptNotes.find((note) => note.id === requestedNoteId);
+    if (!requestedNote) {
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.delete('note');
+      setSelectedNoteId(null);
+      setSearchParams(nextParams, { replace: true });
+      return;
+    }
+
+    setSelectedNoteId(requestedNoteId);
+
+    const requestedState = getConceptNoteFrontstageState(requestedNote);
+    const nextFilter = requestedState === 'progressed'
+      ? 'progressed'
+      : requestedState === 'active'
+        ? 'active'
+        : 'all';
+    setFilter((currentFilter) => (
+      currentFilter === nextFilter ? currentFilter : nextFilter
+    ));
+  }, [conceptNotes, requestedNoteId, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (selectedNote) {
@@ -233,13 +257,13 @@ export default function ConceptNotes() {
   }, [selectedNote]);
 
   useEffect(() => {
-    if (selectedNoteId && !filtered.find((note) => note.id === selectedNoteId)) {
+    if (selectedNoteId && conceptNotes.length > 0 && !conceptNotes.find((note) => note.id === selectedNoteId)) {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('note');
       setSelectedNoteId(null);
       setSearchParams(nextParams, { replace: true });
     }
-  }, [filtered, searchParams, selectedNoteId, setSearchParams]);
+  }, [conceptNotes, searchParams, selectedNoteId, setSearchParams]);
 
   if (loading && conceptNotes.length === 0) {
     return <SectionSkeleton cards={4} />;
@@ -777,6 +801,7 @@ export default function ConceptNotes() {
                   type="button"
                   className="cn-related-note-button"
                   onClick={() => {
+                    onPanelOpen?.();
                     setSelectedNoteId(relatedId);
                     const nextParams = new URLSearchParams(searchParams);
                     nextParams.set('note', relatedId);
@@ -854,6 +879,7 @@ export default function ConceptNotes() {
                     data-testid={`concept-note-${note.id}`}
                     className={`cn-list-row ${selectedNoteId === note.id ? 'active' : ''}`}
                     onClick={() => {
+                      onPanelOpen?.();
                       setSelectedNoteId(note.id);
                       const nextParams = new URLSearchParams(searchParams);
                       nextParams.set('note', note.id);

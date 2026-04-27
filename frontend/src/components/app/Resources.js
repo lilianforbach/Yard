@@ -57,7 +57,7 @@ As you explore, notice whether the project page feels like a helpful working sur
 A good starting path is:
 
 - Open _Dashboard_ to get a quick sense of what is visible across the programme.
-- Open _Review_ to see where projects may benefit from attention, follow-up, or wider support.
+- Open _Project Context_ to see recent project movement, upcoming milestones, and visible coordination signals.
 - Open a few projects outside your own immediate area and look at how updates, milestones, challenges, and feedback sit together on the page.
 - Visit _People_ and _Events_ to see how expertise and programme activity are surfaced across the app.
 
@@ -76,11 +76,11 @@ As you move through the demo, a few questions may be worth keeping in mind:
 
 ## What is available in this demo
 
-This demo includes Yard's main shared surfaces: _Dashboard_, _People_, _Projects_, _Review_, _Concept Notes_, _Events_, _Publications_, and _Getting Started_.
+This demo includes Yard's main shared surfaces: _Dashboard_, _People_, _Projects_, _Project Context_, _Concept Notes_, _Events_, _Publications_, and _Getting Started_.
 
 What you can change depends on the persona you are using:
 
-- PI and programme team accounts are mainly for exploring the wider programme, using _Review_, and contributing feedback where useful.
+- PI and programme team accounts are mainly for exploring the wider programme through _Project Context_ and contributing feedback where useful.
 - Postdoc and PhD accounts are for exploring the wider programme and, where relevant, maintaining the records of the projects they are carrying forward day to day.
 
 ## After your tour
@@ -407,9 +407,9 @@ const WORKFLOW_SECTIONS = [
     ],
   },
   {
-    title: 'For PIs and Review Roles',
+    title: 'For PIs and Programme Roles',
     rows: [
-      { workflow: 'Scan projects that may need guidance', where: 'Projects → Review' },
+      { workflow: 'Scan current project context', where: 'Project Context' },
       {
         workflow: 'Leave feedback on a project',
         wherePrefix: 'Projects → Project page',

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
+  ArrowRight,
   BookOpen,
   Calendar,
   Compass,
@@ -14,14 +15,11 @@ import { useAuth } from '../../contexts/AuthContext';
 import { formatDate } from '../../lib/constants';
 import {
   getConceptNoteContributorLabel,
-  getConceptNoteFrontstageState,
-  getConceptNoteProgressSummary,
   getConceptNoteSortDate,
 } from '../../lib/conceptNotes';
+import { isEventUpcoming } from '../../lib/events';
 import { SectionNotice, SectionSkeleton } from './SectionState';
 import { canAccessMaintenance, formatDaysAgo, getMaintenanceSnapshot } from '../../lib/maintenance';
-import { getLinkedPerson } from '../../lib/roleAccess';
-import { canAccessProjectReview } from '../../lib/projectReview';
 import PasswordResetModal from './PasswordResetModal';
 
 function parseDateValue(value) {
@@ -93,13 +91,22 @@ function DashboardStreamCard({
   emptyText,
   icon,
   tone,
+  totalCount,
+  moreLabel,
+  onMore,
 }) {
   const Icon = icon;
+  const hiddenCount = Math.max(0, (totalCount ?? items.length) - items.length);
 
   return (
     <section className={`dash-stream-card tone-${tone}`}>
       <header className="dash-stream-card-header">
         <h3 className="dash-stream-card-title">{title}</h3>
+        {hiddenCount > 0 && typeof onMore === 'function' && (
+          <button type="button" className="dash-stream-header-more" onClick={onMore} aria-label={moreLabel || `See more ${title.toLowerCase()}`}>
+            <ArrowRight size={15} />
+          </button>
+        )}
       </header>
 
       {items.length > 0 ? (
@@ -144,6 +151,15 @@ function DashboardStreamCard({
     </section>
   );
 }
+
+const DASHBOARD_STREAM_LIMITS = {
+  updates: 3,
+  challenges: 3,
+  milestones: 3,
+  events: 3,
+  conceptNotes: 3,
+  publications: 3,
+};
 
 function AccountAccessCard({
   accounts,
@@ -198,7 +214,7 @@ function AccountAccessCard({
   );
 }
 
-export default function Dashboard({ onNavigate, onProjectClick, onPersonClick }) {
+export default function Dashboard({ onNavigate, onProjectClick, onNoteClick, onEventClick, onPersonClick }) {
   const { user, permissions } = useAuth();
   const {
     activity,
@@ -221,9 +237,7 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
   const [selectedAccount, setSelectedAccount] = useState(null);
 
   const dashboardResourceKeys = ['activity', 'milestones', 'conceptNotes', 'events', 'publications', 'projects', 'people'];
-  const linkedPerson = getLinkedPerson(permissions, getPerson);
   const maintenanceAccess = canAccessMaintenance(permissions);
-  const reviewAccess = canAccessProjectReview(permissions, linkedPerson);
   const currentView = maintenanceAccess && searchParams.get('view') === 'maintenance' ? 'maintenance' : 'overview';
   const adminMaintenanceAccess = Boolean(permissions?.isAdmin);
 
@@ -373,8 +387,6 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
   );
 
   const currentChallenges = useMemo(() => {
-    const severityRank = { blocking: 0, slowing: 1 };
-
     return projects
       .map((project) => {
         const visibleChallenges = (project.currentChallenges || [])
@@ -384,8 +396,6 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
             severity: challenge.severity === 'minor' ? 'slowing' : challenge.severity,
           }))
           .sort((a, b) => {
-            const severityDiff = (severityRank[a.severity] ?? 99) - (severityRank[b.severity] ?? 99);
-            if (severityDiff !== 0) return severityDiff;
             return (b.lastModified || b.date || '').localeCompare(a.lastModified || a.date || '');
           });
 
@@ -398,10 +408,8 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         return {
           key: project.id,
           title: getProjectShortName(project.title),
-          meta: visibleChallenges.length === 1 ? `${severityLabel} challenge` : `${visibleChallenges.length} active challenges`,
-          metaSecondary: primaryDate
-            ? `${primaryChallenge.description} • ${formatDate(primaryDate)}`
-            : primaryChallenge.description,
+          meta: visibleChallenges.length === 1 ? `${severityLabel} challenge` : `${visibleChallenges.length} current challenges`,
+          metaSecondary: primaryDate ? formatDate(primaryDate) : '',
           severity: primaryChallenge.severity,
           sortDate: primaryDate,
           onClick: () => onProjectClick(project.id),
@@ -409,8 +417,6 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
       })
       .filter(Boolean)
       .sort((a, b) => {
-        const severityDiff = (severityRank[a.severity] ?? 99) - (severityRank[b.severity] ?? 99);
-        if (severityDiff !== 0) return severityDiff;
         return (b.sortDate || '').localeCompare(a.sortDate || '');
       });
   }, [onProjectClick, projects]);
@@ -421,23 +427,16 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
       .sort((a, b) => getConceptNoteSortDate(b).localeCompare(getConceptNoteSortDate(a)))
       .map((note) => {
         const contributorLabel = getConceptNoteContributorLabel(note, getPerson);
-        const latestSignals = [...(note.progressSignals || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-        const latestSignal = latestSignals[0] || null;
-        const frontstageState = getConceptNoteFrontstageState(note);
-        const progressSummary = latestSignal ? getConceptNoteProgressSummary(latestSignal, getProject) : null;
+        const sortDate = getConceptNoteSortDate(note);
         return {
           key: note.id,
           title: note.title,
           meta: contributorLabel,
-          metaSecondary: frontstageState === 'progressed'
-            ? progressSummary?.label || 'Progressed'
-            : reviewAccess && note.activeUntil
-              ? `Active until ${formatDate(note.activeUntil)}`
-              : '',
-          onClick: () => onNavigate('conceptnotes', { note: note.id }),
+          metaSecondary: sortDate ? formatDate(sortDate) : '',
+          onClick: () => (onNoteClick ? onNoteClick(note.id) : onNavigate('conceptnotes', { note: note.id })),
         };
       }),
-    [conceptNotes, getPerson, getProject, onNavigate, reviewAccess]
+    [conceptNotes, getPerson, onNavigate, onNoteClick]
   );
 
   const recentPublications = useMemo(
@@ -456,16 +455,16 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
 
   const upcomingEvents = useMemo(
     () => events
-      .filter((event) => event.status === 'upcoming')
+      .filter((event) => isEventUpcoming(event))
       .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
       .map((event) => ({
         key: event.id,
         title: event.name,
         meta: event.location || '',
         metaSecondary: event.date ? formatDate(event.date) : '',
-        onClick: () => onNavigate('events', { event: event.id }),
+        onClick: () => (onEventClick ? onEventClick(event.id) : onNavigate('events', { event: event.id })),
       })),
-    [events, onNavigate]
+    [events, onEventClick, onNavigate]
   );
 
   const overviewHasData = (
@@ -529,7 +528,7 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
       {currentView === 'maintenance' ? (
         <div className="dash-maintenance-shell">
           <div className="dash-maintenance-intro">
-            <p>Keep profiles, access, projects, and concept notes quietly up to date without turning the shared dashboard into a review queue.</p>
+            <p>Keep profiles, access, projects, and concept notes quietly up to date without turning the shared dashboard into a management surface.</p>
           </div>
           <div className="dash-maintenance-grid">
             {maintenanceCards.map((card) => (
@@ -570,51 +569,71 @@ export default function Dashboard({ onNavigate, onProjectClick, onPersonClick })
         </div>
       ) : (
         <div className="dashboard-gallery">
-          <div className="dashboard-gallery-row">
+          <div className="dashboard-gallery-group">
+            <h3 className="dashboard-gallery-group-title">Projects</h3>
             <DashboardStreamCard
               title="Updates"
-              items={updates}
+              items={updates.slice(0, DASHBOARD_STREAM_LIMITS.updates)}
+              totalCount={updates.length}
               emptyText="No published updates yet."
               icon={FileText}
               tone="updates"
-            />
-            <DashboardStreamCard
-              title="Upcoming milestones"
-              items={upcomingMilestones}
-              emptyText="No upcoming milestones right now."
-              icon={Flag}
-              tone="milestones"
+              moreLabel="See more in Project Context"
+              onMore={() => onNavigate('review', { tab: 'activity', q: 'Update' })}
             />
             <DashboardStreamCard
               title="Challenges"
-              items={currentChallenges}
+              items={currentChallenges.slice(0, DASHBOARD_STREAM_LIMITS.challenges)}
+              totalCount={currentChallenges.length}
               emptyText="No active challenges right now."
               icon={Compass}
               tone="challenges"
+              moreLabel="See more in Project Context"
+              onMore={() => onNavigate('review', { tab: 'scan' })}
+            />
+            <DashboardStreamCard
+              title="Upcoming milestones"
+              items={upcomingMilestones.slice(0, DASHBOARD_STREAM_LIMITS.milestones)}
+              totalCount={upcomingMilestones.length}
+              emptyText="No upcoming milestones right now."
+              icon={Flag}
+              tone="milestones"
+              moreLabel="See more in Project Context"
+              onMore={() => onNavigate('review', { tab: 'timeline' })}
             />
           </div>
 
-          <div className="dashboard-gallery-row">
+          <div className="dashboard-gallery-group">
+            <h3 className="dashboard-gallery-group-title">Programme</h3>
             <DashboardStreamCard
-              title="Events"
-              items={upcomingEvents}
+              title="Upcoming Events"
+              items={upcomingEvents.slice(0, DASHBOARD_STREAM_LIMITS.events)}
+              totalCount={upcomingEvents.length}
               emptyText="No upcoming events scheduled."
               icon={Calendar}
               tone="events"
+              moreLabel="See more in Events"
+              onMore={() => onNavigate('events')}
             />
             <DashboardStreamCard
               title="Concept Notes"
-              items={recentConceptNotes}
+              items={recentConceptNotes.slice(0, DASHBOARD_STREAM_LIMITS.conceptNotes)}
+              totalCount={recentConceptNotes.length}
               emptyText="No active or recently progressed concept notes."
               icon={Lightbulb}
               tone="concept"
+              moreLabel="See more in Concept Notes"
+              onMore={() => onNavigate('conceptnotes')}
             />
             <DashboardStreamCard
               title="Publications"
-              items={recentPublications}
+              items={recentPublications.slice(0, DASHBOARD_STREAM_LIMITS.publications)}
+              totalCount={recentPublications.length}
               emptyText="No publications in the last 3 months."
               icon={BookOpen}
               tone="publication"
+              moreLabel="See more in Publications"
+              onMore={() => onNavigate('publications')}
             />
           </div>
 

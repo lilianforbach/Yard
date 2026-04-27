@@ -334,6 +334,140 @@ def test_project_visual_uploads_require_project_edit_access(client):
     assert allowed_delete.json()["deleted"] is True
 
 
+def test_project_markdown_export_requires_auth_and_handles_missing_project(client):
+    unauthenticated = client.get("/api/projects/sousbot/export.md")
+    assert unauthenticated.status_code == 401
+
+    login(client)
+    missing = client.get("/api/projects/not-a-project/export.md")
+    assert missing.status_code == 404
+
+
+def test_project_markdown_export_contains_core_record_and_safe_filename(client):
+    login(client)
+
+    response = client.get("/api/projects/recipegraph/export.md")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert 'filename="yard-project-recipegraph-' in response.headers["content-disposition"]
+    markdown = response.text
+    assert "# RecipeGraph" in markdown
+    assert "Snapshot exported on" in markdown
+    assert "Dr. Tomás Eriksson" in markdown
+    assert "Knowledge-graph reasoning over recipes and flavour structure." in markdown
+    assert "Seed milestone" in markdown
+    assert "https://example.org/recipegraph-slides.pdf" in markdown
+
+
+def test_project_markdown_export_feedback_redaction_matches_project_endpoint(client):
+    register_and_login(client, "a.osei@thornbridge.ac.uk", "Prof. Amara Osei")
+    feedback_payloads = [
+        {"title": "Export lead-only feedback", "content": "Just for the lead.", "audience": "lead", "includeReviewers": False},
+        {"title": "Export team feedback", "content": "For the team.", "audience": "team", "includeReviewers": False},
+        {"title": "Export review feedback", "content": "For programme support.", "audience": "team", "includeReviewers": True},
+        {"title": "Export lead plus support feedback", "content": "For lead and support.", "audience": "lead", "includeReviewers": True},
+    ]
+    all_titles = {payload["title"] for payload in feedback_payloads}
+    for payload in feedback_payloads:
+        created = client.post("/api/projects/sousbot/feedback", json=payload)
+        assert created.status_code == 200
+
+    personas = {
+        "k.asante@lakemere.ac.uk": "Dr. Kwame Asante",
+        "a.bakari@lakemere.ac.uk": "Aisha Bakari",
+        "a.osei@thornbridge.ac.uk": "Prof. Amara Osei",
+        "d.chen@aldhelm.ac.uk": "Prof. David Chen",
+        "n.adeyemi@thornbridge.ac.uk": "Nkechi Adeyemi",
+    }
+    for email, name in personas.items():
+        if email != "a.osei@thornbridge.ac.uk":
+            register_and_login(client, email, name)
+
+    for email in personas:
+        login_as(client, email)
+        project_response = client.get("/api/projects/sousbot")
+        export_response = client.get("/api/projects/sousbot/export.md")
+        assert project_response.status_code == 200
+        assert export_response.status_code == 200
+
+        visible_titles = {entry["title"] for entry in project_response.json()["feedback"]}
+        markdown = export_response.text
+        for title in all_titles:
+            assert (title in markdown) == (title in visible_titles)
+
+
+def test_project_markdown_export_includes_quiet_entries_without_surfacing(client):
+    register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
+    quiet_update = client.post(
+        "/api/projects/sousbot/updates",
+        json={
+            "title": "Quiet export update",
+            "content": "Stored in the project record without programme surfacing.",
+            "publish": False,
+        },
+    )
+    quiet_challenge = client.post(
+        "/api/projects/sousbot/challenges",
+        json={
+            "description": "Quiet export challenge",
+            "severity": "slowing",
+            "publish": False,
+        },
+    )
+    assert quiet_update.status_code == 200
+    assert quiet_challenge.status_code == 200
+
+    export_response = client.get("/api/projects/sousbot/export.md")
+    assert export_response.status_code == 200
+    markdown = export_response.text
+    assert "Quiet export update" in markdown
+    assert "Stored in the project record without programme surfacing." in markdown
+    assert "Quiet export challenge" in markdown
+    assert "Visibility: quiet" not in markdown
+
+    activity = client.get("/api/dashboard/activity")
+    assert activity.status_code == 200
+    activity_titles = {item["title"] for item in activity.json()}
+    assert "Quiet export update" not in activity_titles
+    assert "Quiet export challenge" not in activity_titles
+
+
+def test_project_markdown_export_visual_links_and_inline_dedup(client):
+    register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
+    inline_url = "http://testserver/api/uploads/visual/sousbot--inline.png"
+    support_url = "http://testserver/api/uploads/visual/sousbot--support.png"
+    created = client.post(
+        "/api/projects/sousbot/updates",
+        json={
+            "title": "Visual export update",
+            "content": f"Inline figure:\n\n![Inline figure]({inline_url}){{size=small}}",
+            "svgUrls": [inline_url, support_url],
+            "publish": True,
+        },
+    )
+    assert created.status_code == 200
+
+    export_response = client.get("/api/projects/sousbot/export.md")
+    assert export_response.status_code == 200
+    markdown = export_response.text
+    assert markdown.count("sousbot--inline.png") == 1
+    assert "sousbot--support.png" in markdown
+
+
+def test_project_markdown_export_related_concept_notes_do_not_leak_stewardship_fields(client):
+    login(client)
+
+    export_response = client.get("/api/projects/recipegraph/export.md")
+
+    assert export_response.status_code == 200
+    markdown = export_response.text
+    assert "Taste Perception Under Microgravity" in markdown
+    assert "activeUntil" not in markdown
+    assert "lastActiveExtension" not in markdown
+    assert "2026-05-10" not in markdown
+
+
 def test_startup_migrations_do_not_overwrite_runtime_project_or_people_changes(isolated_app):
     app, _ = isolated_app
 
@@ -504,6 +638,50 @@ def test_admin_reset_endpoint_rejects_current_session_account(client):
     assert reset_response.json()["detail"] == "Use the password change flow for your current account"
 
 
+def test_profile_link_updates_preserve_hidden_legacy_link_fields(client):
+    login(client)
+
+    created_person = client.post(
+        "/api/people",
+        json={
+            "name": "Dr. Legacy Links",
+            "role": "postdoc",
+            "institution": "lakemere",
+            "email": "legacy.links@lakemere.ac.uk",
+            "links": [{"type": "website", "url": "https://visible.example.com"}],
+            "orcid": "0000-0001-2345-6789",
+        },
+    )
+    assert created_person.status_code == 200
+    person = created_person.json()
+    assert person["links"] == [{"type": "website", "url": "https://visible.example.com"}]
+    assert person["orcid"] == "0000-0001-2345-6789"
+
+    updated_person = client.put(
+        f"/api/people/{person['id']}",
+        json={
+            "title": "Updated title",
+            "links": [{"type": "website", "url": "https://visible.example.com"}],
+        },
+    )
+    assert updated_person.status_code == 200
+    updated_payload = updated_person.json()
+    assert updated_payload["website"] == "https://visible.example.com"
+    assert updated_payload["orcid"] == "0000-0001-2345-6789"
+
+    removed_link = client.put(
+        f"/api/people/{person['id']}",
+        json={
+            "links": [],
+        },
+    )
+    assert removed_link.status_code == 200
+    removed_payload = removed_link.json()
+    assert removed_payload["links"] == []
+    assert removed_payload["website"] == ""
+    assert removed_payload["orcid"] == "0000-0001-2345-6789"
+
+
 def test_write_endpoints_require_auth_and_validate_input(client):
     unauthenticated = client.post(
         "/api/milestones",
@@ -578,6 +756,56 @@ def test_programme_data_read_endpoints_require_auth(client):
     for route in protected_routes:
         response = client.get(route)
         assert response.status_code == 401, route
+
+
+def test_dashboard_stats_derives_upcoming_events_from_event_dates(client, isolated_app):
+    _, data_file = isolated_app
+    login(client)
+
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
+    payload["events"] = [
+        {
+            "id": "stale-upcoming",
+            "name": "Stale upcoming event",
+            "date": "2000-01-01",
+            "status": "upcoming",
+        },
+        {
+            "id": "future-marked-past",
+            "name": "Future event marked past",
+            "date": "2999-01-01",
+            "status": "past",
+        },
+        {
+            "id": "invalid-upcoming",
+            "name": "Invalid event marked upcoming",
+            "date": "not-a-date",
+            "status": "upcoming",
+        },
+    ]
+    data_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    stats = client.get("/api/dashboard/stats")
+
+    assert stats.status_code == 200
+    assert stats.json()["upcomingEvents"] == 1
+
+
+def test_dashboard_activity_concept_notes_include_note_id(client):
+    login(client)
+
+    notes_response = client.get("/api/conceptnotes")
+    assert notes_response.status_code == 200
+    note = notes_response.json()[0]
+
+    activity_response = client.get("/api/dashboard/activity")
+    assert activity_response.status_code == 200
+    concept_note_entry = next(
+        entry for entry in activity_response.json()
+        if entry.get("type") == "concept-note" and entry.get("title") == note["title"]
+    )
+
+    assert concept_note_entry["noteId"] == note["id"]
 
 
 def test_project_updates_and_challenges_persist_to_store(client):
@@ -656,7 +884,9 @@ def test_project_write_permissions_follow_role_rules(client):
     )
 
     assert pi_feedback.status_code == 200
+    assert pi_feedback.json()["id"].startswith("fb-")
     assert pi_feedback.json()["author"] == "Prof. Kenji Yamamoto"
+    assert pi_feedback.json()["authorId"] == "kenji"
     assert pi_update.status_code == 403
 
     register_and_login(client, "a.osei@thornbridge.ac.uk", "Prof. Amara Osei")
@@ -673,6 +903,7 @@ def test_project_write_permissions_follow_role_rules(client):
 
     assert unrelated_pi_feedback.status_code == 200
     assert unrelated_pi_feedback.json()["author"] == "Prof. Amara Osei"
+    assert unrelated_pi_feedback.json()["authorId"] == "amara"
 
     register_and_login(client, "n.adeyemi@thornbridge.ac.uk", "Nkechi Adeyemi")
     programme_manager_feedback = client.post(
@@ -682,6 +913,141 @@ def test_project_write_permissions_follow_role_rules(client):
 
     assert programme_manager_feedback.status_code == 200
     assert programme_manager_feedback.json()["author"] == "Nkechi Adeyemi"
+    assert programme_manager_feedback.json()["authorId"] == "nkechi"
+
+
+def test_challenge_identity_and_id_based_lifecycle(client, isolated_app):
+    _, data_file = isolated_app
+    register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
+
+    first = client.post(
+        "/api/projects/sousbot/challenges",
+        json={
+            "description": "  First challenge  ",
+            "severity": "slowing",
+            "raisedBy": "",
+            "publish": True,
+        },
+    )
+    second = client.post(
+        "/api/projects/sousbot/challenges",
+        json={
+            "description": "Second challenge",
+            "severity": "slowing",
+            "raisedBy": "",
+            "publish": True,
+        },
+    )
+
+    assert first.status_code == 200
+    assert first.json()["id"].startswith("ch")
+    assert first.json()["description"] == "First challenge"
+    assert first.json()["raisedBy"] == "Dr. Kwame Asante"
+    assert first.json()["raisedById"] == "kwame"
+    assert second.status_code == 200
+
+    first_id = first.json()["id"]
+    second_id = second.json()["id"]
+
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
+    sousbot = next(project for project in payload["projects"] if project["id"] == "sousbot")
+    current = sousbot["currentChallenges"]
+    first_entry = next(entry for entry in current if entry["id"] == first_id)
+    second_entry = next(entry for entry in current if entry["id"] == second_id)
+    sousbot["currentChallenges"] = [second_entry, first_entry]
+    data_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    edited = client.put(
+        f"/api/projects/sousbot/challenges/{first_id}",
+        json={"description": "  Edited first challenge  ", "severity": "blocking", "publish": True},
+    )
+    assert edited.status_code == 200
+    edited_challenges = edited.json()["currentChallenges"]
+    edited_first = next(entry for entry in edited_challenges if entry["id"] == first_id)
+    untouched_second = next(entry for entry in edited_challenges if entry["id"] == second_id)
+    assert edited_first["description"] == "Edited first challenge"
+    assert edited_first["severity"] == "blocking"
+    assert untouched_second["description"] == "Second challenge"
+
+    resolved = client.post(
+        f"/api/projects/sousbot/challenges/{first_id}/resolve",
+        json={"resolutionNote": "Worked through with the team."},
+    )
+    assert resolved.status_code == 200
+    assert all(entry["id"] != first_id for entry in resolved.json()["currentChallenges"])
+    resolved_first = next(entry for entry in resolved.json()["resolvedChallenges"] if entry["id"] == first_id)
+    assert resolved_first["description"] == "Edited first challenge"
+    assert resolved_first["resolvedBy"] == "Dr. Kwame Asante"
+    assert resolved_first["resolvedById"] == "kwame"
+    assert resolved_first["resolutionNote"] == "Worked through with the team."
+
+
+def test_challenge_description_validation(client):
+    register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
+
+    blank_create = client.post(
+        "/api/projects/sousbot/challenges",
+        json={"description": "   ", "severity": "slowing", "raisedBy": "", "publish": True},
+    )
+    invalid_severity = client.post(
+        "/api/projects/sousbot/challenges",
+        json={"description": "Needs a known severity", "severity": "critical", "raisedBy": "", "publish": True},
+    )
+    valid = client.post(
+        "/api/projects/sousbot/challenges",
+        json={"description": "Valid challenge", "severity": "slowing", "raisedBy": "", "publish": True},
+    )
+    blank_edit = client.put(
+        f"/api/projects/sousbot/challenges/{valid.json()['id']}",
+        json={"description": "   "},
+    )
+
+    assert blank_create.status_code == 422
+    assert invalid_severity.status_code == 422
+    assert valid.status_code == 200
+    assert blank_edit.status_code == 422
+
+
+def test_quiet_challenge_stays_out_of_shared_attention(client):
+    register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
+
+    created = client.post(
+        "/api/projects/sousbot/challenges",
+        json={
+            "description": "Quiet project-local challenge",
+            "severity": "slowing",
+            "raisedBy": "",
+            "publish": False,
+        },
+    )
+    assert created.status_code == 200
+    challenge_id = created.json()["id"]
+    assert created.json()["published"] is False
+
+    project = client.get("/api/projects/sousbot")
+    assert project.status_code == 200
+    assert any(entry["id"] == challenge_id for entry in project.json()["currentChallenges"])
+    project_last_modified_before_resolve = project.json().get("lastModified")
+
+    stats = client.get("/api/dashboard/stats")
+    activity = client.get("/api/dashboard/activity")
+    assert stats.status_code == 200
+    assert activity.status_code == 200
+    assert stats.json()["openChallenges"] == 0
+    assert all(entry.get("title") != "Quiet project-local challenge" for entry in activity.json())
+
+    resolved = client.post(
+        f"/api/projects/sousbot/challenges/{challenge_id}/resolve",
+        json={"resolutionNote": "Handled locally."},
+    )
+    assert resolved.status_code == 200
+    assert resolved.json().get("lastModified") == project_last_modified_before_resolve
+    resolved_entry = next(entry for entry in resolved.json()["resolvedChallenges"] if entry["id"] == challenge_id)
+    assert resolved_entry["published"] is False
+
+    activity_after_resolve = client.get("/api/dashboard/activity")
+    assert activity_after_resolve.status_code == 200
+    assert all(entry.get("title") != "Quiet project-local challenge" for entry in activity_after_resolve.json())
 
 
 def test_feedback_edit_is_limited_to_author_or_admin(client):
@@ -691,28 +1057,102 @@ def test_feedback_edit_is_limited_to_author_or_admin(client):
         json={"title": "Original feedback", "content": "Only the author should edit this", "author": ""},
     )
     assert created.status_code == 200
+    feedback_id = created.json()["id"]
 
     register_and_login(client, "e.whitfield@thornbridge.ac.uk", "Prof. Eleanor Whitfield")
     other_pi_edit = client.put(
-        "/api/projects/sousbot/feedback/0",
+        f"/api/projects/sousbot/feedback/{feedback_id}",
         json={"content": "Trying to edit someone else's feedback"},
     )
     assert other_pi_edit.status_code == 403
 
     register_and_login(client, "n.adeyemi@thornbridge.ac.uk", "Nkechi Adeyemi")
     programme_manager_edit = client.put(
-        "/api/projects/sousbot/feedback/0",
+        f"/api/projects/sousbot/feedback/{feedback_id}",
         json={"content": "The programme manager can edit feedback entries"},
     )
     assert programme_manager_edit.status_code == 403
 
     login(client)
     admin_edit = client.put(
-        "/api/projects/sousbot/feedback/0",
+        f"/api/projects/sousbot/feedback/{feedback_id}",
         json={"content": "Admins can edit feedback entries"},
     )
     assert admin_edit.status_code == 200
-    assert admin_edit.json()["feedback"][0]["content"] == "Admins can edit feedback entries"
+    edited_entry = next(entry for entry in admin_edit.json()["feedback"] if entry["id"] == feedback_id)
+    assert edited_entry["content"] == "Admins can edit feedback entries"
+
+
+def test_feedback_edit_uses_stable_id_when_hidden_entries_precede_visible_entry(client):
+    register_and_login(client, "k.yamamoto@lakemere.ac.uk", "Prof. Kenji Yamamoto")
+    visible = client.post(
+        "/api/projects/sousbot/feedback",
+        json={"title": "Kenji team feedback", "content": "Visible feedback to edit", "author": "", "audience": "team", "includeReviewers": False},
+    )
+    assert visible.status_code == 200
+    visible_id = visible.json()["id"]
+
+    register_and_login(client, "a.osei@thornbridge.ac.uk", "Prof. Amara Osei")
+    hidden = client.post(
+        "/api/projects/sousbot/feedback",
+        json={"title": "Hidden lead-only feedback", "content": "Kenji should not see this", "author": "", "audience": "lead", "includeReviewers": False},
+    )
+    assert hidden.status_code == 200
+    hidden_id = hidden.json()["id"]
+
+    login_as(client, "k.yamamoto@lakemere.ac.uk")
+    visible_project = client.get("/api/projects/sousbot")
+    assert visible_project.status_code == 200
+    visible_titles = [entry["title"] for entry in visible_project.json()["feedback"]]
+    assert "Kenji team feedback" in visible_titles
+    assert "Hidden lead-only feedback" not in visible_titles
+
+    edit = client.put(
+        f"/api/projects/sousbot/feedback/{visible_id}",
+        json={"content": "Edited by stable feedback id"},
+    )
+    assert edit.status_code == 200
+    response_titles = [entry["title"] for entry in edit.json()["feedback"]]
+    assert "Hidden lead-only feedback" not in response_titles
+    edited_visible = next(entry for entry in edit.json()["feedback"] if entry["id"] == visible_id)
+    assert edited_visible["content"] == "Edited by stable feedback id"
+
+    login(client)
+    admin_project = client.get("/api/projects/sousbot")
+    assert admin_project.status_code == 200
+    all_feedback = admin_project.json()["feedback"]
+    assert next(entry for entry in all_feedback if entry["id"] == visible_id)["content"] == "Edited by stable feedback id"
+    assert next(entry for entry in all_feedback if entry["id"] == hidden_id)["content"] == "Kenji should not see this"
+
+
+def test_feedback_author_id_survives_person_display_name_change(client):
+    register_and_login(client, "k.yamamoto@lakemere.ac.uk", "Prof. Kenji Yamamoto")
+    created = client.post(
+        "/api/projects/sousbot/feedback",
+        json={"title": "Identity-stable feedback", "content": "Before rename", "author": ""},
+    )
+    assert created.status_code == 200
+    feedback_id = created.json()["id"]
+    assert created.json()["author"] == "Prof. Kenji Yamamoto"
+    assert created.json()["authorId"] == "kenji"
+
+    login(client)
+    rename = client.put(
+        "/api/people/kenji",
+        json={"name": "Prof. Kenji Yamamoto-Sato"},
+    )
+    assert rename.status_code == 200
+
+    login_as(client, "k.yamamoto@lakemere.ac.uk")
+    edit = client.put(
+        f"/api/projects/sousbot/feedback/{feedback_id}",
+        json={"content": "After rename"},
+    )
+    assert edit.status_code == 200
+    edited = next(entry for entry in edit.json()["feedback"] if entry["id"] == feedback_id)
+    assert edited["content"] == "After rename"
+    assert edited["author"] == "Prof. Kenji Yamamoto"
+    assert edited["authorId"] == "kenji"
 
 
 def test_feedback_visibility_respects_audience_scopes(client):
@@ -785,6 +1225,106 @@ def test_feedback_visibility_respects_audience_scopes(client):
     assert "Lead plus reviewers" in programme_manager_titles
 
 
+def test_feedback_identity_backfill_handles_legacy_entries(isolated_app):
+    app, data_file = isolated_app
+
+    with TestClient(app) as first_client:
+        register_and_login(first_client, "a.osei@thornbridge.ac.uk", "Prof. Amara Osei")
+        created = first_client.post(
+            "/api/projects/sousbot/feedback",
+            json={"title": "Legacy feedback", "content": "Created before fields are stripped", "author": ""},
+        )
+        assert created.status_code == 200
+
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
+    sousbot = next(project for project in payload["projects"] if project["id"] == "sousbot")
+    legacy_entry = next(entry for entry in sousbot["feedback"] if entry["title"] == "Legacy feedback")
+    legacy_entry.pop("id", None)
+    legacy_entry.pop("authorId", None)
+    data_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    with TestClient(app) as second_client:
+        login_as(second_client, "a.osei@thornbridge.ac.uk")
+        project = second_client.get("/api/projects/sousbot")
+        assert project.status_code == 200
+        backfilled_entry = next(entry for entry in project.json()["feedback"] if entry["title"] == "Legacy feedback")
+        assert backfilled_entry["id"].startswith("fb-")
+        assert backfilled_entry["authorId"] == "amara"
+
+        edit = second_client.put(
+            f"/api/projects/sousbot/feedback/{backfilled_entry['id']}",
+            json={"content": "Edited after backfill"},
+        )
+        assert edit.status_code == 200
+        edited_entry = next(entry for entry in edit.json()["feedback"] if entry["id"] == backfilled_entry["id"])
+        assert edited_entry["content"] == "Edited after backfill"
+        backfilled_id = backfilled_entry["id"]
+
+    with TestClient(app) as third_client:
+        login_as(third_client, "a.osei@thornbridge.ac.uk")
+        project = third_client.get("/api/projects/sousbot")
+        assert project.status_code == 200
+        restarted_entry = next(entry for entry in project.json()["feedback"] if entry["title"] == "Legacy feedback")
+        assert restarted_entry["id"] == backfilled_id
+
+
+def test_challenge_identity_backfill_handles_legacy_entries(isolated_app):
+    app, data_file = isolated_app
+
+    with TestClient(app):
+        pass
+
+    payload = json.loads(data_file.read_text(encoding="utf-8"))
+    sousbot = next(project for project in payload["projects"] if project["id"] == "sousbot")
+    sousbot["currentChallenges"].append(
+        {
+            "description": "Legacy active challenge",
+            "severity": "minor",
+            "raisedBy": "kwame",
+            "published": True,
+            "date": "2026-03-01",
+        }
+    )
+    sousbot["resolvedChallenges"].append(
+        {
+            "description": "Legacy resolved challenge",
+            "severity": "slowing",
+            "raisedBy": "kwame",
+            "resolvedBy": "kwame",
+            "published": True,
+            "date": "2026-02-01",
+            "resolvedDate": "2026-02-15",
+        }
+    )
+    data_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    with TestClient(app) as second_client:
+        login(second_client)
+        project = second_client.get("/api/projects/sousbot")
+        assert project.status_code == 200
+        active = next(entry for entry in project.json()["currentChallenges"] if entry["description"] == "Legacy active challenge")
+        resolved = next(entry for entry in project.json()["resolvedChallenges"] if entry["description"] == "Legacy resolved challenge")
+        assert active["id"].startswith("ch")
+        assert active["raisedBy"] == "Dr. Kwame Asante"
+        assert active["raisedById"] == "kwame"
+        assert resolved["id"].startswith("ch")
+        assert resolved["raisedBy"] == "Dr. Kwame Asante"
+        assert resolved["raisedById"] == "kwame"
+        assert resolved["resolvedBy"] == "Dr. Kwame Asante"
+        assert resolved["resolvedById"] == "kwame"
+        active_id = active["id"]
+        resolved_id = resolved["id"]
+
+    with TestClient(app) as third_client:
+        login(third_client)
+        project = third_client.get("/api/projects/sousbot")
+        assert project.status_code == 200
+        active = next(entry for entry in project.json()["currentChallenges"] if entry["description"] == "Legacy active challenge")
+        resolved = next(entry for entry in project.json()["resolvedChallenges"] if entry["description"] == "Legacy resolved challenge")
+        assert active["id"] == active_id
+        assert resolved["id"] == resolved_id
+
+
 def test_milestone_permissions_follow_project_lead(client):
     register_and_login(client, "k.asante@lakemere.ac.uk", "Dr. Kwame Asante")
     created = client.post(
@@ -853,6 +1393,49 @@ def test_concept_note_updates_require_contributor_or_admin(client):
 
     assert allowed_update.status_code == 200
     assert allowed_update.json()["nextSteps"] == "Updated during a contributor integration test."
+
+
+def test_concept_note_active_until_is_redacted_for_non_review_users(client):
+    register_and_login(client, "a.bakari@lakemere.ac.uk", "Aisha Bakari")
+
+    notes_response = client.get("/api/conceptnotes")
+    assert notes_response.status_code == 200
+    assert notes_response.json()
+    assert all("activeUntil" not in note for note in notes_response.json())
+
+
+def test_concept_note_last_active_extension_is_admin_only(client):
+    login(client)
+    notes_response = client.get("/api/conceptnotes")
+    assert notes_response.status_code == 200
+    note_id = notes_response.json()[0]["id"]
+
+    extended = client.post(f"/api/conceptnotes/{note_id}/extend-active")
+    assert extended.status_code == 200
+    assert "lastActiveExtension" in extended.json()
+
+    register_and_login(client, "k.yamamoto@lakemere.ac.uk", "Prof. Kenji Yamamoto")
+    reviewer_notes = client.get("/api/conceptnotes")
+    assert reviewer_notes.status_code == 200
+    reviewer_note = next(note for note in reviewer_notes.json() if note["id"] == note_id)
+
+    assert "activeUntil" in reviewer_note
+    assert "lastActiveExtension" not in reviewer_note
+
+
+def test_concept_note_contributor_edits_must_keep_editor_included(client):
+    register_and_login(client, "p.ramanathan@lakemere.ac.uk", "Dr. Priya Ramanathan")
+    notes_response = client.get("/api/conceptnotes")
+    assert notes_response.status_code == 200
+    note = next(note for note in notes_response.json() if note["createdBy"] == "priya")
+
+    removed_self = client.put(
+        f"/api/conceptnotes/{note['id']}",
+        json={"contributors": ["kwame"]},
+    )
+
+    assert removed_self.status_code == 422
+    assert removed_self.json()["detail"] == "Concept note contributors must include the signed-in user"
 
 
 def test_concept_note_stewardship_fields_require_admin(client):

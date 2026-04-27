@@ -1,6 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, ChevronRight, X, Plus } from 'lucide-react';
+import { Search, ChevronRight, ChevronDown, ChevronUp, X, Plus, Maximize2 } from 'lucide-react';
 import { useData } from '../../contexts/DataContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../contexts/ToastContext';
@@ -12,7 +12,7 @@ import TimelineExperiment from './TimelineExperiment';
 import { formatDate } from '../../lib/constants';
 import { buildProjectTeamPayload, getProjectLeadId, getProjectTeamMemberIds } from '../../lib/projectTeam';
 import {
-  canAccessProjectReview,
+  canAccessProjectContext,
   compareDateStringsAsc,
   compareDateStringsDesc,
   getProjectActivityLabel,
@@ -29,19 +29,12 @@ const TIMELINE_RANGE_OPTIONS = [
   { value: '3y', label: '3 years' },
   { value: 'programme', label: 'Programme' },
 ];
-const DEFAULT_REVIEW_STATE = {
-  label: '',
-  bucket: 'quiet',
-  rank: 99,
-  tone: 'neutral',
-  detail: '',
-};
-const DEFAULT_FRESHNESS_CUE = {
-  bucket: 'quiet',
-  rank: 99,
-  label: '',
-  detail: '',
-};
+const PROJECT_CONTEXT_TABS = new Set(['health', 'timeline', 'activity']);
+
+function getProjectContextTab(value) {
+  if (value === 'scan') return 'health';
+  return PROJECT_CONTEXT_TABS.has(value) ? value : 'health';
+}
 
 function parseMilestoneDate(value) {
   if (!value) return null;
@@ -147,101 +140,79 @@ function getChallengeSeverityLabel(severity) {
   }
 }
 
-function getSafeReviewState(reviewSnapshot) {
-  return reviewSnapshot?.reviewState || DEFAULT_REVIEW_STATE;
+function getLatestChallengeDate(row) {
+  return (row.reviewSnapshot?.challengeSnapshot?.items || []).reduce((latest, challenge) => {
+    const challengeDate = challenge.lastModified || challenge.date || '';
+    return compareDateStringsDesc(challengeDate, latest) < 0 ? challengeDate : latest;
+  }, '');
 }
 
-function getSafeFreshnessCue(freshnessCue) {
-  return freshnessCue || DEFAULT_FRESHNESS_CUE;
-}
+function compareProjectsByChallengeContext(a, b) {
+  const aChallengeDate = getLatestChallengeDate(a);
+  const bChallengeDate = getLatestChallengeDate(b);
+  const challengePresenceDiff = Number(Boolean(bChallengeDate)) - Number(Boolean(aChallengeDate));
+  if (challengePresenceDiff !== 0) return challengePresenceDiff;
 
-function compareProjectsByHealthOrder(a, b) {
-  const rankDiff = getSafeReviewState(a.reviewSnapshot).rank - getSafeReviewState(b.reviewSnapshot).rank;
-  if (rankDiff !== 0) return rankDiff;
-
-  const severityDiff = getReviewSeverityScore(a.reviewSnapshot) - getReviewSeverityScore(b.reviewSnapshot);
-  if (severityDiff !== 0) return severityDiff;
-
-  const blockingDiff = (b.reviewSnapshot?.challengeSnapshot?.blockingCount ?? 0) - (a.reviewSnapshot?.challengeSnapshot?.blockingCount ?? 0);
-  if (blockingDiff !== 0) return blockingDiff;
-
-  const slowingDiff = (b.reviewSnapshot?.challengeSnapshot?.slowingCount ?? 0) - (a.reviewSnapshot?.challengeSnapshot?.slowingCount ?? 0);
-  if (slowingDiff !== 0) return slowingDiff;
-
-  const overdueDiff = (b.reviewSnapshot?.milestoneSnapshot?.overdueCount ?? 0) - (a.reviewSnapshot?.milestoneSnapshot?.overdueCount ?? 0);
-  if (overdueDiff !== 0) return overdueDiff;
-
-  const freshnessDiff = getSafeFreshnessCue(a.freshnessCue).rank - getSafeFreshnessCue(b.freshnessCue).rank;
-  if (freshnessDiff !== 0) return freshnessDiff;
+  const challengeDateDiff = compareDateStringsDesc(aChallengeDate, bChallengeDate);
+  if (challengeDateDiff !== 0) return challengeDateDiff;
 
   const milestoneDiff = compareDateStringsAsc(a.nextMilestone?.dueDate || '9999-12-31', b.nextMilestone?.dueDate || '9999-12-31');
   if (milestoneDiff !== 0) return milestoneDiff;
 
-  const activityDiff = compareDateStringsDesc(a.lastActivityDate, b.lastActivityDate);
-  if (activityDiff !== 0) return activityDiff;
+  return a.project.title.localeCompare(b.project.title);
+}
+
+function compareProjectsByNextMilestone(a, b) {
+  const milestoneDiff = compareDateStringsAsc(a.nextMilestone?.dueDate || '9999-12-31', b.nextMilestone?.dueDate || '9999-12-31');
+  if (milestoneDiff !== 0) return milestoneDiff;
 
   return a.project.title.localeCompare(b.project.title);
 }
 
-function getChallengePriority(severity) {
-  switch (severity) {
-    case 'blocking':
-      return 0;
-    case 'slowing':
-      return 1;
-    case 'minor':
-      return 1;
-    default:
-      return 2;
-  }
-}
-
-function summarizeChallengeText(text, maxLength = 108) {
-  const normalized = (text || '').replace(/\s+/g, ' ').trim();
-  if (normalized.length <= maxLength) return normalized;
-  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
-}
-
 function getChallengeColumn(challengeSnapshot) {
-  const { items = [], primarySeverity = null } = challengeSnapshot || {};
-
-  if (!items.length) {
-    return {
-      value: 'No active challenges',
-      note: '',
-      tone: 'neutral',
-    };
-  }
-
-  const strongestChallenge = [...items].sort((a, b) => {
-    const severityDiff = getChallengePriority(a.severity) - getChallengePriority(b.severity);
-    if (severityDiff !== 0) return severityDiff;
-    return 0;
-  })[0];
-  const severityLabel = getChallengeSeverityLabel(strongestChallenge?.severity);
-  const moreCount = items.length - 1;
-
-  return {
-    value: items.length === 1 ? `${severityLabel} challenge` : `${items.length} active challenges`,
-    note: `${summarizeChallengeText(strongestChallenge?.description || '')}${moreCount > 0 ? ` · +${moreCount} more` : ''}`,
-    tone: primarySeverity === 'blocking' ? 'danger' : primarySeverity === 'slowing' || primarySeverity === 'minor' ? 'warning' : 'neutral',
-  };
+  const { items = [] } = challengeSnapshot || {};
+  return [...items].sort((a, b) => {
+    const dateDiff = compareDateStringsDesc(a.lastModified || a.date || '', b.lastModified || b.date || '');
+    if (dateDiff !== 0) return dateDiff;
+    return (a.description || '').localeCompare(b.description || '');
+  });
 }
 
-function getReviewSeverityScore(reviewSnapshot) {
-  const challengeSnapshot = reviewSnapshot?.challengeSnapshot || {};
-  const milestoneSnapshot = reviewSnapshot?.milestoneSnapshot || {};
-  const blockingCount = challengeSnapshot.blockingCount || 0;
-  const slowingCount = challengeSnapshot.slowingCount || 0;
-  const overdueCount = milestoneSnapshot.overdueCount || 0;
-  const approachingCount = milestoneSnapshot.approachingCount || 0;
+function ProjectReviewChallengeItem({ challenge }) {
+  const [expanded, setExpanded] = useState(false);
+  const description = challenge.description || '';
+  const isExpandable = description.length > 180;
+  const tone = challenge.severity === 'blocking'
+    ? 'danger'
+    : challenge.severity === 'slowing' || challenge.severity === 'minor'
+      ? 'warning'
+      : 'neutral';
 
-  if (blockingCount > 0 && overdueCount > 0) return 0;
-  if (blockingCount > 0) return 1;
-  if (overdueCount > 0) return 2;
-  if (slowingCount > 0) return 3;
-  if (approachingCount > 0) return 4;
-  return 5;
+  return (
+    <div className="project-review-challenge-item">
+      <div className="project-review-challenge-heading">
+        <span className={`project-review-challenge-label ${tone}`}>
+          {getChallengeSeverityLabel(challenge.severity)}
+        </span>
+        {isExpandable && (
+          <button
+            type="button"
+            className="project-review-challenge-toggle"
+            onClick={(event) => {
+              event.stopPropagation();
+              setExpanded((current) => !current);
+            }}
+            aria-label={expanded ? 'Show less challenge' : 'Show full challenge'}
+          >
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        )}
+      </div>
+      <span className={`project-review-challenge-text ${expanded ? 'expanded' : ''}`}>
+        {description}
+      </span>
+    </div>
+  );
 }
 
 function groupByMonth(items) {
@@ -269,10 +240,15 @@ const ACTIVITY_TYPE_LABELS = {
   challenge: 'Challenge',
   'challenge-resolved': 'Resolved',
   'concept-note': 'Concept note',
+  milestone: 'Milestone',
+  publication: 'Publication',
+  event: 'Event',
 };
 
 export default function Projects({
   onProjectClick,
+  onNoteClick,
+  onEventClick,
   onPersonClick,
   onNavigate,
   mode = 'catalogue',
@@ -301,15 +277,39 @@ export default function Projects({
   const [addProjectSubmitting, setAddProjectSubmitting] = useState(false);
 
   const linkedPerson = getLinkedPerson(permissions, getPerson);
-  const reviewAccess = canAccessProjectReview(permissions, linkedPerson);
+  const reviewAccess = canAccessProjectContext(permissions);
   const canAddProject = canCreateProjects(permissions, linkedPerson);
   const requestedView = mode === 'review-only' ? 'review' : searchParams.get('view');
   const activeView = mode === 'review-only'
     ? 'review'
     : requestedView === 'teams'
       ? 'teams'
+      : requestedView === 'mine'
+        ? 'mine'
       : 'overview';
   const selectedProjectId = searchParams.get('project');
+  const requestedProjectContextTab = searchParams.get('tab');
+  const requestedActivityQuery = searchParams.get('q');
+
+  useEffect(() => {
+    if (activeView !== 'review') return;
+    setReviewView(getProjectContextTab(requestedProjectContextTab));
+  }, [activeView, requestedProjectContextTab]);
+
+  useEffect(() => {
+    if (activeView !== 'review') return;
+    if (getProjectContextTab(requestedProjectContextTab) !== 'activity') return;
+    if (requestedActivityQuery == null) return;
+    setActivitySearch(requestedActivityQuery);
+  }, [activeView, requestedProjectContextTab, requestedActivityQuery]);
+
+  const openFullProjectPage = (projectId) => {
+    navigate(`/projects/${projectId}`);
+  };
+
+  const openProjectFromReview = (projectId) => {
+    onProjectClick(projectId);
+  };
 
   const setView = (nextView) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -382,6 +382,8 @@ export default function Projects({
 
   const filteredProjects = useMemo(() => {
     return projects.filter((project) => (
+      (activeView !== 'mine' || Boolean(linkedPerson?.id && getProjectTeamMemberIds(project).includes(linkedPerson.id)))
+      &&
       matchesSearchQuery(
         catalogueSearch,
         project.title,
@@ -392,7 +394,7 @@ export default function Projects({
           .filter(Boolean)
       )
     ));
-  }, [catalogueSearch, getPerson, projects]);
+  }, [activeView, catalogueSearch, getPerson, linkedPerson?.id, projects]);
 
   const projectIndex = useMemo(() => (
     projects.map((project) => {
@@ -446,17 +448,13 @@ export default function Projects({
   const reviewRows = useMemo(() => {
     const query = reviewSearch;
     const rows = projectIndex.filter((row) => {
-      const { lead, reviewSnapshot, nextMilestone } = row;
-      const reviewState = getSafeReviewState(reviewSnapshot);
+      const { lead, nextMilestone } = row;
 
       if (!matchesSearchQuery(
         query,
         row.project.title,
         row.project.description,
         lead?.name,
-        reviewState.detail,
-        row.freshnessCue?.detail,
-        row.freshnessCue?.label,
         nextMilestone?.title,
         row.lastActivitySummary,
         row.lastActivityLabel
@@ -467,7 +465,7 @@ export default function Projects({
       return true;
     });
 
-    return rows.sort(compareProjectsByHealthOrder);
+    return rows.sort(compareProjectsByChallengeContext);
   }, [projectIndex, reviewSearch]);
 
   const roadmapRows = useMemo(() => (
@@ -511,9 +509,6 @@ export default function Projects({
         row.project.title,
         row.project.description,
         row.lead?.name,
-        getSafeReviewState(row.reviewSnapshot).detail,
-        row.freshnessCue?.detail,
-        row.freshnessCue?.label,
         row.nextMilestone?.title,
         row.lastActivitySummary,
         row.lastActivityLabel
@@ -566,7 +561,7 @@ export default function Projects({
         if (!aProjectRow || !bProjectRow) {
           return a.projectTitle.localeCompare(b.projectTitle);
         }
-        return compareProjectsByHealthOrder(aProjectRow, bProjectRow);
+        return compareProjectsByNextMilestone(aProjectRow, bProjectRow);
       });
   }, [filteredTimelineRows, projectIndex, projectIndexById, timelineSearch, timelineWindow]);
 
@@ -619,6 +614,7 @@ export default function Projects({
         query,
         item.title,
         item.project,
+        item.context,
         item.author,
         ACTIVITY_TYPE_LABELS[item.type] || getProjectActivityLabel(item.type)
       ))
@@ -664,31 +660,50 @@ export default function Projects({
 
   const overviewCatalogue = (
     <div className="projects-list">
+      {overviewCards.length === 0 && (
+        <div className="projects-empty-state">
+          <h4>{activeView === 'mine' ? 'No projects are linked to your profile yet.' : 'No projects match this search.'}</h4>
+          <p>{activeView === 'mine' ? 'Projects appear here when your profile is listed as the lead or part of the project team.' : 'Try a different search term.'}</p>
+        </div>
+      )}
       {overviewCards.map(({ project, lead }) => {
         const isActive = selectedProjectId === project.id;
 
         return (
-          <button
+          <div
             key={project.id}
-            type="button"
             data-testid={`project-card-${project.id}`}
             className={`project-list-row ${isActive ? 'active' : ''}`}
-            onClick={() => onProjectClick(project.id)}
           >
-            <div className="project-list-main">
-              <div className="project-list-title-row">
-                <h3>{project.title}</h3>
-                <ChevronRight size={16} className="project-list-chevron" aria-hidden="true" />
-              </div>
-              {lead && (
-                <div className="project-list-meta">
-                  <span className="project-list-lead">
-                    Lead: {lead.name}
-                  </span>
+            <button
+              type="button"
+              className="project-list-preview"
+              onClick={() => onProjectClick(project.id)}
+            >
+              <div className="project-list-main">
+                <div className="project-list-title-row">
+                  <h3>{project.title}</h3>
+                  <ChevronRight size={16} className="project-list-chevron" aria-hidden="true" />
                 </div>
-              )}
-            </div>
-          </button>
+                {lead && (
+                  <div className="project-list-meta">
+                    <span className="project-list-lead">
+                      Lead: {lead.name}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </button>
+            <button
+              type="button"
+              className="project-list-open-page"
+              onClick={() => openFullProjectPage(project.id)}
+              aria-label={`Open full page for ${project.title}`}
+            >
+              <span className="project-list-open-page-label">Open full page</span>
+              <Maximize2 size={13} aria-hidden="true" />
+            </button>
+          </div>
         );
       })}
     </div>
@@ -703,6 +718,7 @@ export default function Projects({
         <div className="section-controls">
           <div className="view-toggle">
             <button data-testid="projects-overview-view" className={`filter-btn ${activeView === 'overview' ? 'active' : ''}`} onClick={() => setView('overview')}>Overview</button>
+            <button data-testid="projects-mine-view" className={`filter-btn ${activeView === 'mine' ? 'active' : ''}`} onClick={() => setView('mine')}>My Projects</button>
             <button data-testid="projects-teams-view" className={`filter-btn ${activeView === 'teams' ? 'active' : ''}`} onClick={() => setView('teams')}>Teams</button>
           </div>
           <div className="search-box">
@@ -724,7 +740,7 @@ export default function Projects({
         </div>
       )}
 
-      {activeView === 'overview' && (
+      {(activeView === 'overview' || activeView === 'mine') && (
         <div className="projects-catalogue-pane">
           <div className="projects-list-scroll">
             {overviewCatalogue}
@@ -804,12 +820,12 @@ export default function Projects({
               <div className="section-actions projects-review-toolbar">
                 <div className="search-box section-search">
                   <Search size={16} />
-                  <input type="text" placeholder="Search review queue..." value={reviewSearch} onChange={(e) => setReviewSearch(e.target.value)} />
+                  <input type="text" placeholder="Search project context..." value={reviewSearch} onChange={(e) => setReviewSearch(e.target.value)} />
                 </div>
               </div>
 
               <p className="projects-review-helper-copy">
-                Projects are ordered by current challenges, milestones, and recent published activity, so those most likely to benefit from review appear first.
+                Projects ordered by recent challenges.
               </p>
 
               <div className="projects-review-list">
@@ -822,22 +838,32 @@ export default function Projects({
                   <>
                     <div className="project-review-header" aria-hidden="true">
                       <div className="project-review-header-cell">Project name ({projectIndex.length})</div>
-                      <div className="project-review-header-cell">Challenges</div>
                       <div className="project-review-header-cell">Next milestone</div>
+                      <div className="project-review-header-cell">Challenges</div>
                     </div>
                     {reviewRows.map(({ project, lead, reviewSnapshot, nextMilestone, nextMilestoneLabel, nextMilestoneNote }) => {
-                      const challengeColumn = getChallengeColumn(reviewSnapshot?.challengeSnapshot);
+                      const challengeItems = getChallengeColumn(reviewSnapshot?.challengeSnapshot);
 
                       return (
-                        <button
+                        <div
                           key={project.id}
-                          type="button"
                           className={`project-review-row ${selectedProjectId === project.id ? 'active' : ''}`}
-                          onClick={() => onProjectClick(project.id)}
+                          onClick={() => openProjectFromReview(project.id)}
                         >
                           <div className="project-review-main">
                             <div className="project-review-title-row">
-                              <h4>{project.title}</h4>
+                              <h4>
+                                <button
+                                  type="button"
+                                  className="project-review-title-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openProjectFromReview(project.id);
+                                  }}
+                                >
+                                  {project.title}
+                                </button>
+                              </h4>
                             </div>
                             <div className="project-review-inline-meta">
                               <span className="project-review-inline-item">
@@ -847,12 +873,6 @@ export default function Projects({
                             </div>
                           </div>
                           <div className="project-review-column">
-                            <span className={`project-review-column-value ${challengeColumn.tone} ${challengeColumn.note ? '' : 'subtle'}`}>{challengeColumn.value}</span>
-                            {challengeColumn.note ? (
-                              <span className="project-review-column-note">{challengeColumn.note}</span>
-                            ) : null}
-                          </div>
-                          <div className="project-review-column">
                             <span className={`project-review-column-value ${nextMilestone ? '' : 'subtle'}`}>
                               {nextMilestone ? nextMilestone.title : nextMilestoneLabel}
                             </span>
@@ -860,7 +880,23 @@ export default function Projects({
                               <span className="project-review-column-note">{nextMilestoneNote}</span>
                             ) : null}
                           </div>
-                        </button>
+                          <div className="project-review-column project-review-column-challenges">
+                            {challengeItems.length > 0 ? (
+                              <div className="project-review-challenge-list">
+                                {challengeItems.map((challenge, index) => {
+                                  return (
+                                    <ProjectReviewChallengeItem
+                                      key={challenge.id || `${project.id}-challenge-${index}`}
+                                      challenge={challenge}
+                                    />
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <span className="project-review-column-value subtle">No active challenges</span>
+                            )}
+                          </div>
+                        </div>
                       );
                     })}
                   </>
@@ -928,18 +964,33 @@ export default function Projects({
                     {groupedActivity.map((group) => (
                       <div key={group.key} className="dash-feed-month">
                         <div className="dash-feed-month-label">{group.label}</div>
-                        {group.items.map((entry, index) => {
-                          const isClickable = Boolean(entry.projectId) || entry.type === 'concept-note';
+                    {group.items.map((entry, index) => {
                           const activityTypeLabel = ACTIVITY_TYPE_LABELS[entry.type];
                           const handleClick = () => {
                             if (entry.projectId) {
                               onProjectClick(entry.projectId);
-                            } else if (entry.type === 'concept-note' && onNavigate) {
-                              onNavigate('conceptnotes');
+                            } else if (entry.type === 'concept-note') {
+                              if (entry.noteId && onNoteClick) {
+                                onNoteClick(entry.noteId);
+                              } else if (onNavigate) {
+                                onNavigate('conceptnotes', entry.noteId ? { note: entry.noteId } : undefined);
+                              }
+                            } else if (entry.type === 'event' && entry.eventId) {
+                              if (onEventClick) {
+                                onEventClick(entry.eventId);
+                              } else if (onNavigate) {
+                                onNavigate('events', { event: entry.eventId });
+                              }
+                            } else if (entry.type === 'publication' && onNavigate) {
+                              onNavigate('publications');
                             }
                           };
+                          const isClickableEntry = Boolean(entry.projectId)
+                            || (entry.type === 'concept-note' && (entry.noteId || onNavigate))
+                            || (entry.type === 'event' && entry.eventId && (onEventClick || onNavigate))
+                            || (entry.type === 'publication' && onNavigate);
 
-                          if (isClickable) {
+                          if (isClickableEntry) {
                             return (
                               <button
                                 key={`${group.key}-${index}`}
@@ -958,7 +1009,7 @@ export default function Projects({
                                     {entry.title}
                                   </div>
                                   <div className="activity-meta">
-                                    {entry.project && <>{entry.project} &bull; </>}
+                                    {(entry.context || entry.project) && <>{entry.context || entry.project} &bull; </>}
                                     {formatDate(entry.date)}
                                     {entry.author && <> &bull; {entry.author}</>}
                                   </div>
@@ -983,7 +1034,7 @@ export default function Projects({
                                   {entry.title}
                                 </div>
                                 <div className="activity-meta">
-                                  {entry.project && <>{entry.project} &bull; </>}
+                                  {(entry.context || entry.project) && <>{entry.context || entry.project} &bull; </>}
                                   {formatDate(entry.date)}
                                   {entry.author && <> &bull; {entry.author}</>}
                                 </div>

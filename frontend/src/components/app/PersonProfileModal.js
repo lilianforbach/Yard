@@ -3,7 +3,6 @@ import { Plus, X } from 'lucide-react';
 import api from '../../api';
 import { useData } from '../../contexts/DataContext';
 import {
-  normalizeOrcidValue,
   buildPersonLinks,
   getPersonLinkLabel,
   getPersonLinkPlaceholder,
@@ -25,8 +24,6 @@ const ROLE_PILLS = [
   { value: 'programme-team', label: 'Programme Team', roles: ['staff', 'coordinator', 'management'] },
 ];
 const TITLE_DEFAULT_ROLES = new Set(['staff', 'coordinator', 'management']);
-
-const LEGACY_LINK_TYPES = ['website', 'github', 'substack', 'orcid'];
 
 function createEmptyLinkDraft() {
   return {
@@ -66,24 +63,12 @@ function buildPayload(draft, canEditIdentity) {
         .map((link) => [`${link.type}|${link.label}|${link.url}`, link]),
     ).values(),
   );
-  const legacyLinks = {
-    website: '',
-    github: '',
-    substack: '',
-    orcid: '',
-  };
-  links.forEach((link) => {
-    if (LEGACY_LINK_TYPES.includes(link.type) && !legacyLinks[link.type]) {
-      legacyLinks[link.type] = link.type === 'orcid' ? normalizeOrcidValue(link.url) : link.url;
-    }
-  });
 
   const payload = {
     title: draft.title.trim(),
     email: draft.email.trim(),
     researchDescription: draft.researchDescription.trim(),
     links,
-    ...legacyLinks,
     skills: Array.from(new Set((draft.skills || [])
       .map((skill) => skill?.trim())
       .filter(Boolean))),
@@ -294,13 +279,13 @@ export default function PersonProfileModal({
   };
 
   const footer = (
-    <div className="writing-form-actions">
-      <button type="button" className="btn secondary-btn" onClick={onClose} disabled={loading}>
+    <div className="writing-form-actions profile-editor-footer">
+      <button type="button" className="btn secondary-btn profile-editor-cancel-btn" onClick={onClose} disabled={loading}>
         Cancel
       </button>
       <button
         type="button"
-        className="save-mode-btn quiet"
+        className={`save-mode-btn quiet profile-editor-save-btn ${hasChanges && !loading ? 'is-ready' : ''}`}
         onClick={handleSave}
         disabled={loading || !hasChanges}
       >
@@ -312,166 +297,173 @@ export default function PersonProfileModal({
   return (
     <WritingModal
       title={`Edit profile for ${person.name}`}
-      subtitle="Keep this light-touch. Highlight the few things people should know, and the few things you would be happy to be contacted about."
       onClose={onClose}
       footer={footer}
       className="profile-editor-modal person-profile-editor-modal"
     >
       <div className="profile-editor-form">
-        {!canEditIdentity && (
-          <div className="form-inline-note">
-            Role and institution are managed centrally. Use this editor for your profile details, contact settings, research interests, shared expertise, equipment support, and optional links.
-          </div>
-        )}
-
-        {error && <div className="auth-error">{error}</div>}
-
-        {canEditIdentity && (
-          <div className="profile-editor-grid">
-            <div className="form-field">
-              <label>Full Name</label>
-              <input
-                type="text"
-                value={draft.name}
-                onChange={(e) => setDraft((current) => ({ ...current, name: e.target.value }))}
-                disabled={loading}
-              />
+        <div className="profile-editor-section profile-editor-section-subtle">
+          <div className="profile-editor-section-header">
+            <div>
+              <h3>Profile details</h3>
             </div>
-            <div className="form-field profile-editor-span-full">
-              <label>Role</label>
-              <div className="profile-editor-pill-group">
-                {ROLE_PILLS.map((option) => {
-                  const active = getRolePillValue(draft.role) === option.value;
-                  return (
+          </div>
+
+          {error && <div className="auth-error">{error}</div>}
+
+          {canEditIdentity && (
+            <div className="profile-editor-grid">
+              <div className="form-field">
+                <label>Full Name</label>
+                <input
+                  type="text"
+                  value={draft.name}
+                  onChange={(e) => setDraft((current) => ({ ...current, name: e.target.value }))}
+                  disabled={loading}
+                />
+              </div>
+              <div className="form-field profile-editor-span-full">
+                <label>Role</label>
+                <div className="profile-editor-pill-group">
+                  {ROLE_PILLS.map((option) => {
+                    const active = getRolePillValue(draft.role) === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`profile-editor-pill ${active ? 'active' : ''}`}
+                        onClick={() => handleRolePillClick(option.value)}
+                        disabled={loading}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="form-field profile-editor-span-full">
+                <label>Institution</label>
+                <div className="profile-editor-pill-group">
+                  {institutions.map((institution) => (
                     <button
-                      key={option.value}
+                      key={institution.id}
                       type="button"
-                      className={`profile-editor-pill ${active ? 'active' : ''}`}
-                      onClick={() => handleRolePillClick(option.value)}
+                      className={`profile-editor-pill ${draft.institution === institution.id ? 'active' : ''}`}
+                      onClick={() => setDraft((current) => ({ ...current, institution: institution.id }))}
                       disabled={loading}
                     >
-                      {option.label}
+                      {institution.name}
                     </button>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
             </div>
-            <div className="form-field profile-editor-span-full">
-              <label>Institution</label>
-              <div className="profile-editor-pill-group">
-                {institutions.map((institution) => (
+          )}
+
+          <div className="profile-editor-subsection">
+            <div className="profile-editor-grid">
+              {shouldShowTitleField ? (
+                <div className="form-field profile-editor-span-full">
+                  <div className="profile-editor-field-header">
+                    <label>Title</label>
+                    {canHideTitleField && (
+                      <button
+                        type="button"
+                        className="profile-editor-field-remove"
+                        onClick={() => setShowTitleField(false)}
+                        disabled={loading}
+                      >
+                        Hide
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    type="text"
+                    value={draft.title}
+                    onChange={(e) => setDraft((current) => ({ ...current, title: e.target.value }))}
+                    disabled={loading}
+                  />
+                </div>
+              ) : (
+                <div className="profile-editor-actions-row profile-editor-span-full">
                   <button
-                    key={institution.id}
                     type="button"
-                    className={`profile-editor-pill ${draft.institution === institution.id ? 'active' : ''}`}
-                    onClick={() => setDraft((current) => ({ ...current, institution: institution.id }))}
+                    className="action-btn small secondary profile-editor-add-link-btn"
+                    onClick={() => setShowTitleField(true)}
                     disabled={loading}
                   >
-                    {institution.name}
+                    <Plus size={14} /> Add Title
                   </button>
-                ))}
+                </div>
+              )}
+              <div className="form-field profile-editor-span-full profile-editor-contact-field">
+                <div className="profile-editor-field-header">
+                  <label>Email</label>
+                </div>
+                <div className="profile-editor-contact-layout">
+                  <div className="profile-editor-contact-main">
+                    <input
+                      type="email"
+                      className="profile-editor-readonly-input"
+                      value={draft.email}
+                      placeholder="e.g. j.smith@lakemere.ac.uk"
+                      readOnly
+                      aria-readonly="true"
+                    />
+                    <p className="profile-editor-field-note">Managed with Yard access</p>
+                  </div>
+                  <div className="profile-editor-contact-controls">
+                    <div className="profile-editor-contact-controls-heading">Visibility</div>
+                    <div className="profile-editor-inline-switch-row">
+                      <span className="profile-editor-inline-switch-label">Email</span>
+                      <button
+                        type="button"
+                        className={`profile-editor-switch ${draft.showEmail ? 'active' : ''}`}
+                        onClick={() => setDraft((current) => ({ ...current, showEmail: !current.showEmail }))}
+                        disabled={loading}
+                        role="switch"
+                        aria-checked={draft.showEmail}
+                        aria-label="Show email on profile"
+                      >
+                        <span className="profile-editor-switch-track" aria-hidden="true">
+                          <span className="profile-editor-switch-thumb" />
+                        </span>
+                      </button>
+                    </div>
+                    <div className="profile-editor-inline-switch-row">
+                      <span className="profile-editor-inline-switch-label">Teams Chat</span>
+                      <button
+                        type="button"
+                        className={`profile-editor-switch ${draft.showTeamsChat ? 'active' : ''}`}
+                        onClick={() => setDraft((current) => ({ ...current, showTeamsChat: !current.showTeamsChat }))}
+                        disabled={loading}
+                        role="switch"
+                        aria-checked={draft.showTeamsChat}
+                        aria-label="Show Teams chat on profile"
+                      >
+                        <span className="profile-editor-switch-track" aria-hidden="true">
+                          <span className="profile-editor-switch-thumb" />
+                        </span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
-        )}
 
-        <div className="profile-editor-grid">
-          {shouldShowTitleField ? (
+          <div className="profile-editor-subsection">
             <div className="form-field profile-editor-span-full">
-              <div className="profile-editor-field-header">
-                <label>Title</label>
-                {canHideTitleField && (
-                  <button
-                    type="button"
-                    className="profile-editor-field-remove"
-                    onClick={() => setShowTitleField(false)}
-                    disabled={loading}
-                  >
-                    Hide
-                  </button>
-                )}
-              </div>
-              <input
-                type="text"
-                value={draft.title}
-                onChange={(e) => setDraft((current) => ({ ...current, title: e.target.value }))}
-                placeholder="e.g. RETO or Programme Manager"
+              <label>Research interests</label>
+              <textarea
+                rows={6}
+                className="profile-editor-research-textarea"
+                value={draft.researchDescription}
+                onChange={(e) => setDraft((current) => ({ ...current, researchDescription: e.target.value }))}
+                placeholder="Describe the questions, themes, or approaches you want people in the programme to associate with your work."
                 disabled={loading}
               />
             </div>
-          ) : (
-            <div className="profile-editor-actions-row profile-editor-span-full">
-              <button
-                type="button"
-                className="action-btn small secondary profile-editor-add-link-btn"
-                onClick={() => setShowTitleField(true)}
-                disabled={loading}
-              >
-                <Plus size={14} /> Add Title
-              </button>
-            </div>
-          )}
-          <div className="form-field profile-editor-span-full profile-editor-contact-field">
-            <div className="profile-editor-field-header">
-              <label>Email</label>
-            </div>
-            <div className="profile-editor-contact-layout">
-              <div className="profile-editor-contact-main">
-                <input
-                  type="email"
-                  className="profile-editor-readonly-input"
-                  value={draft.email}
-                  placeholder="e.g. j.smith@lakemere.ac.uk"
-                  readOnly
-                  aria-readonly="true"
-                />
-                <p className="profile-editor-field-note">Managed with Yard access</p>
-              </div>
-              <div className="profile-editor-contact-controls">
-                <div className="profile-editor-inline-switch-row">
-                  <span className="profile-editor-inline-switch-label">Show email</span>
-                  <button
-                    type="button"
-                    className={`profile-editor-switch ${draft.showEmail ? 'active' : ''}`}
-                    onClick={() => setDraft((current) => ({ ...current, showEmail: !current.showEmail }))}
-                    disabled={loading}
-                    role="switch"
-                    aria-checked={draft.showEmail}
-                    aria-label="Show email on profile"
-                  >
-                    <span className="profile-editor-switch-track" aria-hidden="true">
-                      <span className="profile-editor-switch-thumb" />
-                    </span>
-                  </button>
-                </div>
-                <div className="profile-editor-inline-switch-row">
-                  <span className="profile-editor-inline-switch-label">Teams Chat</span>
-                  <button
-                    type="button"
-                    className={`profile-editor-switch ${draft.showTeamsChat ? 'active' : ''}`}
-                    onClick={() => setDraft((current) => ({ ...current, showTeamsChat: !current.showTeamsChat }))}
-                    disabled={loading}
-                    role="switch"
-                    aria-checked={draft.showTeamsChat}
-                    aria-label="Show Teams chat on profile"
-                  >
-                    <span className="profile-editor-switch-track" aria-hidden="true">
-                      <span className="profile-editor-switch-thumb" />
-                    </span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div className="form-field profile-editor-span-full">
-            <label>Research Interests</label>
-            <textarea
-              rows={8}
-              value={draft.researchDescription}
-              onChange={(e) => setDraft((current) => ({ ...current, researchDescription: e.target.value }))}
-              placeholder="Describe the questions, themes, or approaches you want people in the programme to associate with your work."
-              disabled={loading}
-            />
           </div>
         </div>
 
@@ -513,17 +505,12 @@ export default function PersonProfileModal({
                   handleAddSkill();
                 }
               }}
-              placeholder="e.g. interview design"
               disabled={loading}
             />
             <button type="button" className="action-btn small profile-editor-token-add" onClick={handleAddSkill} disabled={loading || !newSkill.trim()}>
               <Plus size={14} /> Add
             </button>
           </div>
-
-          <p className="skill-entry-note subtle">
-            Common variations such as <strong>ML</strong> and <strong>machine learning</strong> are matched automatically.
-          </p>
 
           {newSkill.trim() && canonicalDraftSkill && normalizeSkillKey(canonicalDraftSkill) !== normalizeSkillKey(newSkill) && (
             <p className="skill-entry-note">
@@ -556,7 +543,7 @@ export default function PersonProfileModal({
             </div>
           </div>
 
-          {draft.equipment.length > 0 ? (
+          {draft.equipment.length > 0 && (
             <div className="profile-editor-equipment-list">
               {draft.equipment.map((item, index) => (
                 <div key={`${item.name}-${index}`} className="profile-editor-equipment-item">
@@ -576,8 +563,6 @@ export default function PersonProfileModal({
                 </div>
               ))}
             </div>
-          ) : (
-            <p className="profile-editor-empty">Nothing highlighted yet.</p>
           )}
 
           <div className="profile-editor-grid">
@@ -614,7 +599,7 @@ export default function PersonProfileModal({
           <div className="profile-editor-section-header">
             <div>
               <h3>Links</h3>
-              <p>Add the external links that would help someone follow up from this profile.</p>
+              <p>Add the external links that you would like people to visit to know more about your work.</p>
             </div>
           </div>
 

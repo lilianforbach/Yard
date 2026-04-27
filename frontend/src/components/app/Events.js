@@ -3,11 +3,12 @@ import { useSearchParams } from 'react-router-dom';
 import { useData } from '../../contexts/DataContext';
 import { ChevronRight, Search } from 'lucide-react';
 import { formatDate } from '../../lib/constants';
+import { isEventPast, isEventUpcoming } from '../../lib/events';
 import { matchesSearchQuery } from '../../lib/search';
 import SlidePanel from './SlidePanel';
 import { SectionNotice, SectionSkeleton } from './SectionState';
 
-export default function Events() {
+export default function Events({ onPanelOpen }) {
   const { events, loading, refreshResource, resourceStatus } = useData();
   const [searchParams, setSearchParams] = useSearchParams();
   const [filter, setFilter] = useState('upcoming');
@@ -18,7 +19,7 @@ export default function Events() {
     const nextEvents = filter === 'all'
       ? events
       : events.filter((event) => (
-        filter === 'past' ? event.status === 'past' : event.status !== 'past'
+        filter === 'past' ? isEventPast(event) : isEventUpcoming(event)
       ));
 
     const searchedEvents = nextEvents.filter((event) => (
@@ -40,15 +41,33 @@ export default function Events() {
     });
   }, [events, filter, search]);
 
+  const selectedEvent = useMemo(
+    () => events.find((event) => event.id === selectedEventId),
+    [events, selectedEventId]
+  );
+
   useEffect(() => {
-    if (selectedEventId && !filtered.find((event) => event.id === selectedEventId)) {
+    if (!selectedEventId || loading) return;
+
+    if (!selectedEvent) {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.delete('event');
       setSearchParams(nextParams, { replace: true });
+      return;
     }
-  }, [filtered, searchParams, selectedEventId, setSearchParams]);
 
-  const selectedEvent = filtered.find(e => e.id === selectedEventId);
+    if (filter !== 'all') {
+      const targetFilter = isEventPast(selectedEvent)
+        ? 'past'
+        : isEventUpcoming(selectedEvent)
+          ? 'upcoming'
+          : 'all';
+      if (filter !== targetFilter) {
+        setFilter(targetFilter);
+      }
+    }
+  }, [filter, loading, searchParams, selectedEvent, selectedEventId, setSearchParams]);
+
   const closeSelectedEvent = () => {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete('event');
@@ -110,6 +129,7 @@ export default function Events() {
                     data-testid={`event-list-item-${event.id}`}
                     className={`event-list-item ${selectedEventId === event.id ? 'active' : ''}`}
                     onClick={() => {
+                      onPanelOpen?.();
                       const nextParams = new URLSearchParams(searchParams);
                       nextParams.set('event', event.id);
                       setSearchParams(nextParams, { replace: true });

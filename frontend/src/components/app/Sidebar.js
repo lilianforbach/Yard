@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useTheme } from 'next-themes';
 import { useAuth } from '../../contexts/AuthContext';
-import { LayoutDashboard, Users, Microscope, Repeat2, Lightbulb, BookOpen, Calendar, Library, PanelLeft, LogOut, X, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, Users, Microscope, Repeat2, Lightbulb, BookOpen, Calendar, Library, PanelLeft, LogOut, X, Sun, Moon, UserRound, FolderOpen } from 'lucide-react';
 
 const primaryNav = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -9,7 +9,7 @@ const primaryNav = [
   { id: 'projects', label: 'Projects', icon: Microscope },
 ];
 
-const reviewNavItem = { id: 'review', label: 'Review', icon: Repeat2 };
+const reviewNavItem = { id: 'review', label: 'Project Context', icon: Repeat2 };
 
 const secondaryNav = [
   { id: 'conceptnotes', label: 'Concept Notes', icon: Lightbulb },
@@ -18,7 +18,20 @@ const secondaryNav = [
   { id: 'resources', label: 'Getting Started', icon: Library },
 ];
 
-export default function Sidebar({ activeSection, onNavigate, showReview = false, collapsed, mobile, mobileOpen, onToggle, userEmail = '' }) {
+export default function Sidebar({
+  activeSection,
+  onNavigate,
+  showReview = false,
+  collapsed,
+  mobile,
+  mobileOpen,
+  onToggle,
+  userEmail = '',
+  linkedPerson = null,
+  myProjectsCount = 0,
+  onOpenMyProfile,
+  onOpenMyProjects,
+}) {
   const { logout } = useAuth();
   const { theme, setTheme } = useTheme();
   const navItems = showReview ? [...primaryNav, reviewNavItem] : primaryNav;
@@ -77,9 +90,42 @@ export default function Sidebar({ activeSection, onNavigate, showReview = false,
         )}
       </button>
       <div className="sidebar-footer">
+        {!collapsed && userEmail && (
+          <div className="sidebar-user">
+            <span className="sidebar-user-email" data-testid="user-email">{linkedPerson?.name || userEmail}</span>
+            {linkedPerson?.name && <span className="sidebar-user-email secondary">{userEmail}</span>}
+          </div>
+        )}
+        {linkedPerson?.id && (
+          <div className="sidebar-shortcuts" aria-label="Personal shortcuts">
+            <button
+              type="button"
+              data-testid="my-profile-shortcut"
+              className="sidebar-shortcut-btn"
+              onClick={onOpenMyProfile}
+              title="My Profile"
+              aria-label="Open My Profile"
+            >
+              <UserRound size={16} />
+              {!collapsed && <span>My Profile</span>}
+            </button>
+            {myProjectsCount > 0 ? (
+              <button
+                type="button"
+                data-testid="my-projects-shortcut"
+                className="sidebar-shortcut-btn"
+                onClick={onOpenMyProjects}
+                title="My Projects"
+                aria-label={`Open My Projects, ${myProjectsCount} linked`}
+              >
+                <FolderOpen size={16} />
+                {!collapsed && <span>My Projects</span>}
+              </button>
+            ) : null}
+          </div>
+        )}
         {!collapsed && (
           <div className="theme-switch">
-            <span className="theme-switch-label">Appearance</span>
             <div className="theme-switch-group" role="group" aria-label="Theme">
               <button
                 type="button"
@@ -113,12 +159,6 @@ export default function Sidebar({ activeSection, onNavigate, showReview = false,
             {activeTheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
           </button>
         )}
-        {!collapsed && userEmail && (
-          <div className="sidebar-user">
-            <span className="sidebar-user-label">Signed in as</span>
-            <span className="sidebar-user-email" data-testid="user-email">{userEmail}</span>
-          </div>
-        )}
         {!collapsed && (
           <button data-testid="logout-button" className="logout-btn" onClick={logout}>
             <LogOut size={16} />
@@ -129,11 +169,6 @@ export default function Sidebar({ activeSection, onNavigate, showReview = false,
           <button data-testid="logout-button-collapsed" className="logout-btn" onClick={logout} title="Sign Out">
             <LogOut size={16} />
           </button>
-        )}
-        {!collapsed && (
-          <p className="sidebar-footer-text">
-            Yard • Research programme workspace
-          </p>
         )}
       </div>
     </aside>

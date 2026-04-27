@@ -9,6 +9,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-random-secret}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8000}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      YARD_SEED_FILE: ${YARD_SEED_FILE:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@yard.local}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-YardAccess2026!}
     restart: unless-stopped
@@ -24,6 +25,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-replace-with-a-long-random-secret}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:8000}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      YARD_SEED_FILE: ${YARD_SEED_FILE:-}
       MONGO_URL: mongodb://mongo:27017
       DB_NAME: yard
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@yard.local}
